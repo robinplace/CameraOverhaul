@@ -32,17 +32,25 @@ using Timberborn.MainMenuPanels;
 
 [Context("Game")]
 [Context("MapEditor")]
-internal class TestConfigurator : IConfigurator {
+internal class GameConfigurator : IConfigurator {
 	public void Configure(IContainerDefinition c) {
-		Debug.Log("Test Conf");
+		Debug.Log(this.GetType().Name);
 		c.Bind<Indicator>().AsSingleton();
+	}
+}
+
+[Context("MainMenu")]
+internal class MainMenuConfigurator : IConfigurator {
+	public void Configure(IContainerDefinition c) {
+		Debug.Log(this.GetType().Name);
+		c.Bind<AutoContinue>().AsSingleton();
 	}
 }
 
 public class AutoContinue(
     MainMenuPanel mainMenuPanel
-) : IUpdatableSingleton {
-	public void UpdateSingleton() {
+) : IPostLoadableSingleton {
+	public void PostLoad() {
 		if (!Keyboard.current.shiftKey.isPressed) {
 			mainMenuPanel.ContinueClicked(null);
 		}
@@ -64,12 +72,12 @@ class Indicator(
 	IThreadSafeWaterMap threadSafeWaterMap,
 	ILevelVisibilityService levelVisibilityService
 ) : ILoadableSingleton, IInputProcessor {
-	GameObject _crosshair = null!;
+	GameObject crosshair = null!;
 
 	public void Load() {
 		Debug.Log("Indic Load");
-		_crosshair = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-		_crosshair.layer = Layers.IgnoreRaycastMask;
+		crosshair = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+		crosshair.layer = Layers.IgnoreRaycastMask;
 		inputService.AddInputProcessor(this);
 	}
 	
@@ -125,10 +133,10 @@ class Indicator(
 	}
 	
 	NavMode? navMode;
-	float? panZ;
 	Vector3? orbitLastScreenPoint;
-	Vector3? panOriginalWorldPoint;
+	Plane? panWorldPlane;
 	Vector3? panOriginalCameraTarget;
+	Vector3? panOriginalScreenPoint;
 
 	public bool ProcessInput() {
 		if (inputService.MoveButtonHeld) {
@@ -157,24 +165,25 @@ class Indicator(
 					Hit(worldRay, out var worldPoint);
 					if (worldPoint.HasValue) {
 						navMode = NavMode.Pan;
-						panZ = worldPoint.Value.z;
-						panOriginalWorldPoint = worldPoint;
+						panWorldPlane = new Plane(Vector3.up, worldPoint!.Value);
 						panOriginalCameraTarget = cameraService.Target;
+						panOriginalScreenPoint = screenPoint;
 					}
 				} else {
 					// continue pan
-					var panWorldPlane = new Plane(Vector3.up, panZ!.Value);
-					panWorldPlane.Raycast(worldRay, out var enterOffset);
-					var panWorldPoint = worldRay.GetPoint(enterOffset);
-					_crosshair.transform.position = panOriginalWorldPoint!.Value;
-					/*_cameraService.Target = (
+					var originalWorldRay = cameraService.ScreenPointToRayInWorldSpace(panOriginalScreenPoint!.Value);
+					panWorldPlane!.Value.Raycast(worldRay, out var enterOffset);
+					var worldPoint = worldRay.GetPoint(enterOffset);
+					panWorldPlane!.Value.Raycast(originalWorldRay, out var originalEnterOffset);
+					var originalWorldPoint = originalWorldRay.GetPoint(originalEnterOffset);
+					//crosshair.transform.position = panOriginalWorldPoint!.Value;
+					cameraService.Target = (
 						panOriginalCameraTarget!.Value +
-						(panWorldPoint - panOriginalWorldPoint!.Value)
-					);*/
+						(originalWorldPoint - worldPoint)
+					);
 					Debug.Log("continue pan");
-					Debug.Log(enterOffset);
-					Debug.Log(panWorldPoint - panOriginalWorldPoint!.Value);
-					Debug.Log(panOriginalCameraTarget!.Value);
+					Debug.Log(worldPoint);
+					Debug.Log(originalWorldPoint);
 				}
 			}
 		} else {
@@ -224,6 +233,13 @@ class Patches {
 	// turn off default orbit handler
 	[HarmonyPrefix, HarmonyPatch(typeof(MouseCameraController), nameof(MouseCameraController.RotationUpdate))]
 	static bool RotationUpdate() {
+		return false;
+	}
+
+	// force free mode for zoom
+	[HarmonyPrefix, HarmonyPatch(typeof(CameraService), nameof(CameraService.ZoomLimitsSpec), MethodType.Getter)]
+	static bool RotationUpdate(CameraService __instance, ref FloatLimitsSpec __result) {
+		__result = __instance._cameraServiceSpec.MapEditorZoomLimits;
 		return false;
 	}
 
