@@ -1,0 +1,10 @@
+{
+	"Name": "Test",
+	"Version": "0.1",
+	"Id": "Test.Test",
+	"MinimumGameVersion": "0.0.0.0",
+	"Description": "A test mod for debugging.",
+	"RequiredMods": [
+		{ "Id": "Harmony" }
+	]
+}

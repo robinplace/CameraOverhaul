@@ -1,0 +1,35 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>netstandard2.1</TargetFramework>
+		<Nullable>enable</Nullable>
+		<LangVersion>latest</LangVersion>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<Authors>Robin</Authors>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<DllPath>/Users/robin/Library/Application Support/Steam/steamapps/common/Timberborn/Timberborn.app/Contents/Resources/Data/Managed</DllPath>
+		<ModPath>/Users/robin/Documents/Timberborn/Mods</ModPath>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.2" PrivateAssets="all" /> 
+	</ItemGroup>
+
+	<ItemGroup>
+		<Reference Include="$(ModPath)/harmony_639651c/0Harmony.dll" Private="false"/>
+		<Reference Include="$(DllPath)/Unity.*.dll" Publicize="true" Private="false"/>
+		<Reference Include="$(DllPath)/UnityEngine.*.dll" Publicize="true" Private="false"/>
+		<Reference Include="$(DllPath)/Timberborn.*.dll" Publicize="true" Private="false"/>
+		<Reference Include="$(DllPath)/Bindito.*.dll" Publicize="true" Private="false"/>
+		<Reference Include="$(DllPath)/Newtonsoft.Json.dll" Publicize="true" Private="false"/>
+	</ItemGroup>
+
+	<Target Name="Copy" AfterTargets="Build">
+		<Copy SourceFiles="manifest.json" DestinationFiles="mod/manifest.json"/>
+		<Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFiles="mod/$(AssemblyName).dll"/>
+
+		<Exec Command="killall Timberborn || true"/>
+		<Exec Command="/Applications/Steam.app/Contents/MacOS/steam_osx -applaunch 1062090 -skipModManager"/>
+	</Target>
+</Project>
