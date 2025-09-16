@@ -2,44 +2,32 @@ using Bindito.Core;
 using Timberborn.InputSystem;
 using Timberborn.CameraSystem;
 using Timberborn.WaterSystemRendering;
-using Newtonsoft.Json.Utilities;
 using Timberborn.WaterSystemUI;
-using Unity.Services.Core.Telemetry.Internal;
 using Timberborn.SingletonSystem;
-using Timberborn.AssetSystem;
-using Timberborn.Debugging;
-using Timberborn.RootProviders;
 using Timberborn.Coordinates;
 using Timberborn.SelectionSystem;
-using Timberborn.BaseComponentSystem;
-using Timberborn.BlockSystem;
 using Timberborn.TerrainQueryingSystem;
 using Timberborn.GridTraversing;
 using Timberborn.CursorToolSystem;
 using Timberborn.TerrainSystem;
-using Timberborn.PrefabOptimization;
 using Timberborn.Rendering;
-using Timberborn.BlockObjectPickingSystem;
-using Timberborn.BlockSystemNavigation;
-using UnityEngine.Rendering.Universal.UTess;
-using UnityEngine.Rendering;
 using Timberborn.WaterSystem;
 using Timberborn.LevelVisibilitySystem;
-using Mono.Cecil.Cil;
 using UnityEngine.InputSystem;
-using Timberborn.MainMenuScene;
-using Timberborn.MainMenuPanels;
+//using Timberborn.MainMenuScene;
+//using Timberborn.MainMenuPanels;
+using Timberborn.BlueprintSystem;
 
 [Context("Game")]
 [Context("MapEditor")]
 internal class GameConfigurator : IConfigurator {
 	public void Configure(IContainerDefinition c) {
 		Debug.Log(this.GetType().Name);
-		c.Bind<Indicator>().AsSingleton();
+		c.Bind<Nav>().AsSingleton();
 	}
 }
 
-[Context("MainMenu")]
+/*[Context("MainMenu")]
 internal class MainMenuConfigurator : IConfigurator {
 	public void Configure(IContainerDefinition c) {
 		Debug.Log(this.GetType().Name);
@@ -55,14 +43,14 @@ public class AutoContinue(
 			mainMenuPanel.ContinueClicked(null);
 		}
 	}
-}
+}*/
 
 enum NavMode {
 	Pan,
 	Orbit,
 }
 
-class Indicator(
+class Nav(
 	InputService inputService,
 	SelectableObjectRaycaster selectableObjectRaycaster,
 	CameraService cameraService,
@@ -70,18 +58,22 @@ class Indicator(
 	ITerrainService terrainService,
 	WaterOpacityService waterOpacityService,
 	IThreadSafeWaterMap threadSafeWaterMap,
-	ILevelVisibilityService levelVisibilityService
+	ILevelVisibilityService levelVisibilityService,
+	ISpecService specService
 ) : ILoadableSingleton, IInputProcessor {
 	GameObject crosshair = null!;
+	CameraServiceSpec? cameraServiceSpec;
 
 	public void Load() {
-		Debug.Log("Indic Load");
-		crosshair = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+		Debug.Log("Nav.Load");
+		crosshair = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
 		crosshair.layer = Layers.IgnoreRaycastMask;
 		inputService.AddInputProcessor(this);
+		cameraServiceSpec = specService.GetSingleSpec<CameraServiceSpec>();
+		RenderSettings.fog = false;
 	}
 	
-	void TerrainHit(Ray worldRay, out Vector3? worldPoint, out float worldDistance) {
+	void TerrainHit(Ray worldRay, out Vector3? worldHit, out float worldDistance) {
 		var gridRay = CoordinateSystem.WorldToGrid(worldRay);
 		var terrainCoord = (
 			waterOpacityService.IsWaterTransparent ?
@@ -96,15 +88,16 @@ class Indicator(
 			Vector3Int vector3Int = valueOrDefault.Coordinates + valueOrDefault.Face;
 			if (terrainService.Contains(vector3Int)) {
 				var coord = new CursorCoordinates(valueOrDefault.Intersection, vector3Int);
-				worldPoint = CoordinateSystem.GridToWorld(coord.Coordinates);
-				worldDistance = Vector3.Distance(worldRay.origin, worldPoint.Value);
+				worldHit = CoordinateSystem.GridToWorld(coord.Coordinates);
+				worldDistance = Vector3.Distance(worldRay.origin, worldHit.Value);
 				return;
 			}
 		}
-		worldPoint = null;
+		worldHit = null;
 		worldDistance = float.PositiveInfinity;
 	}
-	void SelectableHit(Ray worldRay, out Vector3? worldPoint, out float worldDistance) {
+
+	void SelectableHit(Ray worldRay, out Vector3? worldHit, out float worldDistance) {
 		var didHitSelectable = selectableObjectRaycaster.TryHitSelectableObject(
 			worldSpaceRay: worldRay,
 			includeTerrainStump: false,
@@ -112,82 +105,154 @@ class Indicator(
 			raycastHit: out var selectableHit
 		);
 		if (didHitSelectable) {
-			worldPoint = selectableHit.point;
+			worldHit = selectableHit.point;
 			worldDistance = selectableHit.distance;
 			return;
 		}
-		worldPoint = null;
+		worldHit = null;
 		worldDistance = float.PositiveInfinity;
 	}
 
-	void Hit(Ray worldRay, out Vector3? worldPoint) {
-		TerrainHit(worldRay, out var terrainPoint, out var terrainDistance);
-		SelectableHit(worldRay, out var selectablePoint, out var selectableDistance);
+	void Hit(Ray worldRay, out Vector3? worldHit) {
+		TerrainHit(worldRay, out var terrainHit, out var terrainDistance);
+		SelectableHit(worldRay, out var selectableHit, out var selectableDistance);
 		if (selectableDistance < terrainDistance) {
-			worldPoint = selectablePoint;
+			worldHit = selectableHit;
 		} else if (terrainDistance > 0) {
-			worldPoint = terrainPoint;
+			worldHit = terrainHit;
 		} else {
-			worldPoint = worldRay.origin;
+			worldHit = worldRay.origin;
 		}
 	}
 	
 	NavMode? navMode;
-	Vector3? orbitLastScreenPoint;
+	Vector3? orbitOriginWorldPoint;
+	Vector2? orbitOriginalScreenPoint;
+	Vector3? orbitOriginalCameraTarget;
+	Vector2? orbitOriginalCameraAngle;
 	Plane? panWorldPlane;
 	Vector3? panOriginalCameraTarget;
-	Vector3? panOriginalScreenPoint;
+	Vector2? panOriginalScreenPoint;
 
 	public bool ProcessInput() {
-		if (inputService.MoveButtonHeld) {
-			var screenPoint = inputService.MousePosition;
-			var worldRay = cameraService.ScreenPointToRayInWorldSpace(screenPoint);
+		Vector2 screenPoint = inputService.MousePosition;
+		var worldRay = cameraService.ScreenPointToRayInWorldSpace(screenPoint);
+		Hit(worldRay, out var worldHit);
+		var zeroPlane = new Plane(Vector3.up, Vector3.zero);
+		zeroPlane.Raycast(worldRay, out var zeroOffset);
+		var zeroPoint = worldRay.GetPoint(zeroOffset);
+		var worldPoint = worldHit ?? zeroPoint;
 
-			if (
+		if (
+			inputService.RotateButtonHeld ||
+			inputService.MoveButtonHeld && (
 				Keyboard.current.leftCommandKey.isPressed ||
 				Keyboard.current.rightCommandKey.isPressed ||
-				Keyboard.current.leftShiftKey.isPressed ||
-				Keyboard.current.rightShiftKey.isPressed
-			) {
-				if ( navMode != NavMode.Orbit) {
-					// start orbit
-					Hit(worldRay, out var worldPoint);
-					if (worldPoint.HasValue) {
-						navMode = NavMode.Orbit;
-						orbitLastScreenPoint = screenPoint;
-					}
-				} else {
-					// continue orbit
-				}
+				Keyboard.current.leftCtrlKey.isPressed ||
+				Keyboard.current.rightCtrlKey.isPressed
+			)
+		) {
+			if (navMode != NavMode.Orbit) {
+				// start orbit
+				navMode = NavMode.Orbit;
+				orbitOriginWorldPoint = worldPoint;
+				orbitOriginalScreenPoint = screenPoint;
+				orbitOriginalCameraTarget = cameraService.Target;
+				orbitOriginalCameraAngle = new Vector2(cameraService.HorizontalAngle, cameraService.VerticalAngle);
 			} else {
-				if (navMode != NavMode.Pan) {
-					// start pan
-					Hit(worldRay, out var worldPoint);
-					if (worldPoint.HasValue) {
-						navMode = NavMode.Pan;
-						panWorldPlane = new Plane(Vector3.up, worldPoint!.Value);
-						panOriginalCameraTarget = cameraService.Target;
-						panOriginalScreenPoint = screenPoint;
-					}
-				} else {
-					// continue pan
-					var originalWorldRay = cameraService.ScreenPointToRayInWorldSpace(panOriginalScreenPoint!.Value);
-					panWorldPlane!.Value.Raycast(worldRay, out var enterOffset);
-					var worldPoint = worldRay.GetPoint(enterOffset);
-					panWorldPlane!.Value.Raycast(originalWorldRay, out var originalEnterOffset);
-					var originalWorldPoint = originalWorldRay.GetPoint(originalEnterOffset);
-					//crosshair.transform.position = panOriginalWorldPoint!.Value;
-					cameraService.Target = (
-						panOriginalCameraTarget!.Value +
-						(originalWorldPoint - worldPoint)
-					);
-					Debug.Log("continue pan");
-					Debug.Log(worldPoint);
-					Debug.Log(originalWorldPoint);
-				}
+				// continue orbit
+				var screenDistance = screenPoint - orbitOriginalScreenPoint!.Value;
+				var freeAngleDelta = new Vector2(screenDistance.x * 0.2f, 0 - screenDistance.y * 0.2f);
+				var freeCameraAngle = orbitOriginalCameraAngle!.Value + freeAngleDelta;
+				var clampedCameraAngle = new Vector2(
+					freeCameraAngle.x,
+					Mathf.Clamp(
+						freeCameraAngle.y,
+						cameraServiceSpec!.VerticalAngleLimits.Min, cameraServiceSpec.VerticalAngleLimits.Max
+					)
+				);
+				var clampedAngleDelta = clampedCameraAngle - orbitOriginalCameraAngle!.Value;
+
+				cameraService.HorizontalAngle = clampedCameraAngle.x;
+				cameraService.VerticalAngle = clampedCameraAngle.y;
+
+				cameraService.MoveTargetTo(
+					(
+						Quaternion.AngleAxis(clampedAngleDelta.x, Vector3.up) *
+						Quaternion.AngleAxis(clampedAngleDelta.y, (
+							Quaternion.AngleAxis(orbitOriginalCameraAngle!.Value.x, Vector3.up) *
+							Vector3.right
+						))
+					) *
+					(orbitOriginalCameraTarget!.Value - orbitOriginWorldPoint!.Value) +
+					orbitOriginWorldPoint!.Value
+				);
+			}
+		} else if (inputService.MoveButtonHeld) {
+			if (navMode != NavMode.Pan) {
+				// start pan
+				navMode = NavMode.Pan;
+				panWorldPlane = new Plane(Vector3.up, worldPoint);
+				panOriginalCameraTarget = cameraService.Target;
+				panOriginalScreenPoint = screenPoint;
+			} else {
+				// continue pan
+				var originalWorldRay = cameraService.ScreenPointToRayInWorldSpace(panOriginalScreenPoint!.Value);
+				panWorldPlane!.Value.Raycast(worldRay, out var offset);
+				var planePoint = worldRay.GetPoint(offset);
+				panWorldPlane!.Value.Raycast(originalWorldRay, out var originalOffset);
+				var originalPlanePoint = originalWorldRay.GetPoint(originalOffset);
+				var worldDistance = originalPlanePoint - planePoint;
+				cameraService.MoveTargetTo(panOriginalCameraTarget!.Value + worldDistance);
 			}
 		} else {
 			navMode = null;
+		}
+
+		if (!inputService.MouseOverUI && inputService.MouseZoom != 0) {
+			var zoomFactor = 1 - inputService.MouseZoom * 1f;
+			var cameraDistance = (
+				Mathf.Pow(cameraServiceSpec!.ZoomBase, cameraService.ZoomLevel) *
+				cameraServiceSpec!.BaseDistance
+			);
+			var minCameraDistance = (
+				Mathf.Pow(cameraServiceSpec!.ZoomBase, float.Epsilon) *
+				cameraServiceSpec!.BaseDistance
+			);
+			var maxCameraDistance = (
+				Mathf.Pow(cameraServiceSpec!.ZoomBase, cameraServiceSpec.MapEditorZoomLimits.Max) *
+				cameraServiceSpec!.BaseDistance
+			);
+			var clampedZoomFactor = Mathf.Clamp(
+				zoomFactor,
+				minCameraDistance / cameraDistance,
+				maxCameraDistance / cameraDistance
+			);
+			var cameraVector = (
+				Quaternion.Euler(cameraService.VerticalAngle, cameraService.HorizontalAngle, 0) *
+				new Vector3(0, 0, 0 - cameraDistance)
+			);
+			Vector3? zoomPoint;
+
+			var cameraPosition = cameraService.Target + cameraVector;
+			//var zoomRay = new Ray(cameraPosition, worldPoint.Value - cameraPosition);
+			//var zoomPoint = zoomRay.GetPoint(inputService.MouseZoom * 20f);
+			//crosshair.transform.position = zoomRay.GetPoint(5);
+			zoomPoint = worldPoint + (cameraPosition - worldPoint) * clampedZoomFactor;
+			//Debug.Log("distance " + Vector3.Distance(cameraPosition, worldPoint.Value) + " by " + (1 - inputService.MouseZoom * 0.1f));
+
+			var targetPlane = new Plane(Vector3.up, cameraService.Target);
+			var targetRay = new Ray(zoomPoint!.Value, cameraVector * (0 - 1));
+			targetPlane.Raycast(targetRay, out var targetPlaneOffset);
+
+			var zoomLevel = Mathf.Log(
+				targetPlaneOffset / cameraServiceSpec!.BaseDistance,
+				cameraServiceSpec!.ZoomBase
+			);
+			//Debug.Log(cameraService.ZoomLevel + " to " + zoomLevel);
+			cameraService.ZoomLevel = zoomLevel;
+			var targetPoint = targetRay.GetPoint(targetPlaneOffset);
+			cameraService.MoveTargetTo(targetPoint);
 		}
 
 		//Debug.Log(Mouse.current.scroll.ReadValue());
@@ -236,12 +301,18 @@ class Patches {
 		return false;
 	}
 
-	// force free mode for zoom
-	[HarmonyPrefix, HarmonyPatch(typeof(CameraService), nameof(CameraService.ZoomLimitsSpec), MethodType.Getter)]
-	static bool RotationUpdate(CameraService __instance, ref FloatLimitsSpec __result) {
-		__result = __instance._cameraServiceSpec.MapEditorZoomLimits;
+	// turn off default zoom handler
+	[HarmonyPrefix, HarmonyPatch(typeof(MouseCameraController), nameof(MouseCameraController.ScrollWheelUpdate))]
+	static bool ScrollWheelUpdate() {
 		return false;
 	}
+
+	/*// force free mode for zoom
+	[HarmonyPrefix, HarmonyPatch(typeof(CameraService), nameof(CameraService.ZoomLimitsSpec), MethodType.Getter)]
+	static bool ZoomLimitsSpec(CameraService __instance, ref FloatLimitsSpec __result) {
+		__result = __instance._cameraServiceSpec.MapEditorZoomLimits;
+		return false;
+	}*/
 
 	/*[HarmonyPrefix, HarmonyPatch(typeof(MouseCameraController), nameof(MouseCameraController.StartRotatingCamera))]
 	static bool PatchedStartRotatingCamera(MouseCameraController __instance) {
@@ -278,11 +349,11 @@ class Patches {
 		return false;
 	}*/
 
-	[HarmonyPrefix, HarmonyPatch(typeof(MainMenuInitializer), nameof(MainMenuInitializer.ShowWelcomeScreen))]
+	/*[HarmonyPrefix, HarmonyPatch(typeof(MainMenuInitializer), nameof(MainMenuInitializer.ShowWelcomeScreen))]
 	static bool OverrideWelcomeScreen(MainMenuInitializer __instance) {
 		__instance.ShowMainMenuPanel();
 		return false;
-	}
+	}*/
 }
 
 // switch between pan & orbit with a key

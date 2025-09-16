@@ -1,9 +1,9 @@
 {
-	"Name": "Test",
+	"Name": "Camera Overhaul",
 	"Version": "0.1",
-	"Id": "Test.Test",
+	"Id": "Robin.CameraOverhaul",
 	"MinimumGameVersion": "0.0.0.0",
-	"Description": "A test mod for debugging.",
+	"Description": "Rebuilds the camera pan, orbit, & zoom to match professional CAD standards. Game changer for playing on a trackpad.",
 	"RequiredMods": [
 		{ "Id": "Harmony" }
 	]

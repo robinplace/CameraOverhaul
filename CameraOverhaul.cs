@@ -2,11 +2,12 @@ global using UnityEngine;
 global using HarmonyLib;
 using Timberborn.ModManagerScene;
 
-public class ModStarter : IModStarter
+public class CameraOverhaul : IModStarter
 {
 	public void StartMod()
 	{
-		var harmony = new Harmony("Test.Test");
+		Debug.Log(this.GetType().Name);
+		var harmony = new Harmony("Robin.CameraOverhaul");
 		harmony.PatchAll();
 	}
 }
