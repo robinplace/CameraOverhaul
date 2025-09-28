@@ -10,13 +10,15 @@ using Timberborn.TerrainQueryingSystem;
 using Timberborn.GridTraversing;
 using Timberborn.CursorToolSystem;
 using Timberborn.TerrainSystem;
-using Timberborn.Rendering;
 using Timberborn.WaterSystem;
 using Timberborn.LevelVisibilitySystem;
 using UnityEngine.InputSystem;
-//using Timberborn.MainMenuScene;
-//using Timberborn.MainMenuPanels;
+using Timberborn.MainMenuPanels;
 using Timberborn.BlueprintSystem;
+using Timberborn.OptionsGame;
+using Timberborn.ApplicationLifetime;
+using Timberborn.UILayoutSystem;
+using Timberborn.Rendering;
 
 [Context("Game")]
 [Context("MapEditor")]
@@ -27,7 +29,7 @@ internal class GameConfigurator : IConfigurator {
 	}
 }
 
-/*[Context("MainMenu")]
+[Context("MainMenu")]
 internal class MainMenuConfigurator : IConfigurator {
 	public void Configure(IContainerDefinition c) {
 		Debug.Log(this.GetType().Name);
@@ -39,11 +41,16 @@ public class AutoContinue(
     MainMenuPanel mainMenuPanel
 ) : IPostLoadableSingleton {
 	public void PostLoad() {
-		if (!Keyboard.current.shiftKey.isPressed) {
+		if (
+			!Keyboard.current.leftCommandKey.isPressed &&
+			!Keyboard.current.rightCommandKey.isPressed &&
+			!Keyboard.current.leftCtrlKey.isPressed &&
+			!Keyboard.current.rightCtrlKey.isPressed
+		) {
 			mainMenuPanel.ContinueClicked(null);
 		}
 	}
-}*/
+}
 
 enum NavMode {
 	Pan,
@@ -55,19 +62,18 @@ class Nav(
 	SelectableObjectRaycaster selectableObjectRaycaster,
 	CameraService cameraService,
 	TerrainPicker terrainPicker,
-	ITerrainService terrainService,
 	WaterOpacityService waterOpacityService,
 	IThreadSafeWaterMap threadSafeWaterMap,
 	ILevelVisibilityService levelVisibilityService,
 	ISpecService specService
 ) : ILoadableSingleton, IInputProcessor {
-	GameObject crosshair = null!;
+	//GameObject crosshair = null!;
 	CameraServiceSpec? cameraServiceSpec;
 
 	public void Load() {
 		Debug.Log("Nav.Load");
-		crosshair = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-		crosshair.layer = Layers.IgnoreRaycastMask;
+		// crosshair = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+		// crosshair.layer = Layers.IgnoreRaycastMask;
 		inputService.AddInputProcessor(this);
 		cameraServiceSpec = specService.GetSingleSpec<CameraServiceSpec>();
 		RenderSettings.fog = false;
@@ -86,12 +92,10 @@ class Nav(
 		if (terrainCoord.HasValue) {
 			TraversedCoordinates valueOrDefault = terrainCoord.GetValueOrDefault();
 			Vector3Int vector3Int = valueOrDefault.Coordinates + valueOrDefault.Face;
-			if (terrainService.Contains(vector3Int)) {
-				var coord = new CursorCoordinates(valueOrDefault.Intersection, vector3Int);
-				worldHit = CoordinateSystem.GridToWorld(coord.Coordinates);
-				worldDistance = Vector3.Distance(worldRay.origin, worldHit.Value);
-				return;
-			}
+			var coord = new CursorCoordinates(valueOrDefault.Intersection, vector3Int);
+			worldHit = CoordinateSystem.GridToWorld(coord.Coordinates);
+			worldDistance = Vector3.Distance(worldRay.origin, worldHit.Value);
+			return;
 		}
 		worldHit = null;
 		worldDistance = float.PositiveInfinity;
@@ -142,6 +146,7 @@ class Nav(
 		zeroPlane.Raycast(worldRay, out var zeroOffset);
 		var zeroPoint = worldRay.GetPoint(zeroOffset);
 		var worldPoint = worldHit ?? zeroPoint;
+		// crosshair.transform.position = worldPoint;
 
 		if (
 			inputService.RotateButtonHeld ||
@@ -162,7 +167,7 @@ class Nav(
 			} else {
 				// continue orbit
 				var screenDistance = screenPoint - orbitOriginalScreenPoint!.Value;
-				var freeAngleDelta = new Vector2(screenDistance.x * 0.2f, 0 - screenDistance.y * 0.2f);
+				var freeAngleDelta = new Vector2(screenDistance.x * 0.1f, 0 - screenDistance.y * 0.1f);
 				var freeCameraAngle = orbitOriginalCameraAngle!.Value + freeAngleDelta;
 				var clampedCameraAngle = new Vector2(
 					freeCameraAngle.x,
@@ -215,10 +220,10 @@ class Nav(
 				Mathf.Pow(cameraServiceSpec!.ZoomBase, cameraService.ZoomLevel) *
 				cameraServiceSpec!.BaseDistance
 			);
-			var minCameraDistance = (
+			var minCameraDistance = 0f/*(
 				Mathf.Pow(cameraServiceSpec!.ZoomBase, float.Epsilon) *
 				cameraServiceSpec!.BaseDistance
-			);
+			)*/;
 			var maxCameraDistance = (
 				Mathf.Pow(cameraServiceSpec!.ZoomBase, cameraServiceSpec.MapEditorZoomLimits.Max) *
 				cameraServiceSpec!.BaseDistance
@@ -237,22 +242,23 @@ class Nav(
 			var cameraPosition = cameraService.Target + cameraVector;
 			//var zoomRay = new Ray(cameraPosition, worldPoint.Value - cameraPosition);
 			//var zoomPoint = zoomRay.GetPoint(inputService.MouseZoom * 20f);
-			//crosshair.transform.position = zoomRay.GetPoint(5);
 			zoomPoint = worldPoint + (cameraPosition - worldPoint) * clampedZoomFactor;
 			//Debug.Log("distance " + Vector3.Distance(cameraPosition, worldPoint.Value) + " by " + (1 - inputService.MouseZoom * 0.1f));
 
-			var targetPlane = new Plane(Vector3.up, cameraService.Target);
+			var targetPlane = new Plane(Vector3.up, 0);
 			var targetRay = new Ray(zoomPoint!.Value, cameraVector * (0 - 1));
 			targetPlane.Raycast(targetRay, out var targetPlaneOffset);
+
+			var targetPoint = targetRay.GetPoint(targetPlaneOffset);
+			cameraService.MoveTargetTo(targetPoint);
 
 			var zoomLevel = Mathf.Log(
 				targetPlaneOffset / cameraServiceSpec!.BaseDistance,
 				cameraServiceSpec!.ZoomBase
 			);
-			//Debug.Log(cameraService.ZoomLevel + " to " + zoomLevel);
 			cameraService.ZoomLevel = zoomLevel;
-			var targetPoint = targetRay.GetPoint(targetPlaneOffset);
-			cameraService.MoveTargetTo(targetPoint);
+
+			//Debug.Log(cameraService.ZoomLevel + " to " + zoomLevel);
 		}
 
 		//Debug.Log(Mouse.current.scroll.ReadValue());
@@ -307,6 +313,32 @@ class Patches {
 		return false;
 	}
 
+	// turn off goodbye on quit to main menu
+	[HarmonyPrefix, HarmonyPatch(typeof(GameOptionsBox), nameof(GameOptionsBox.ExitToMenuClicked))]
+	static bool ExitToMenuClicked(GameOptionsBox __instance) {
+		__instance._goodbyeBoxFactory._mainMenuSceneLoader.OpenMainMenu();
+		return false;
+	}
+
+	// turn off goodbye on quit to desktop
+	[HarmonyPrefix, HarmonyPatch(typeof(GameOptionsBox), nameof(GameOptionsBox.ExitToDesktopClicked))]
+	static bool ExitToDesktopClicked(GameOptionsBox __instance) {
+		GameQuitter.Quit();
+		return false;
+	}
+
+	// turn off panel pause
+	[HarmonyPrefix, HarmonyPatch(typeof(OverlayPanelSpeedLocker), nameof(OverlayPanelSpeedLocker.OnPanelShown))]
+	static bool OnPanelShown() {
+		return false;
+	}
+
+	// turn off panel unpause
+	[HarmonyPrefix, HarmonyPatch(typeof(OverlayPanelSpeedLocker), nameof(OverlayPanelSpeedLocker.OnPanelHidden))]
+	static bool OnPanelHidden() {
+		return false;
+	}
+
 	/*// force free mode for zoom
 	[HarmonyPrefix, HarmonyPatch(typeof(CameraService), nameof(CameraService.ZoomLimitsSpec), MethodType.Getter)]
 	static bool ZoomLimitsSpec(CameraService __instance, ref FloatLimitsSpec __result) {
@@ -355,6 +387,3 @@ class Patches {
 		return false;
 	}*/
 }
-
-// switch between pan & orbit with a key
-// don't pause when the happiness panel is opened
