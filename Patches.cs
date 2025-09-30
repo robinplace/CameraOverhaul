@@ -18,13 +18,15 @@ using Timberborn.ApplicationLifetime;
 using Timberborn.UILayoutSystem;
 using Timberborn.MainMenuScene;
 using Timberborn.Rendering;
-using Timberborn.MapStateSystem;
+using Timberborn.PrefabOptimization;
+using Unity.Mathematics;
 
 [Context("Game")]
 [Context("MapEditor")]
-internal class GameConfigurator: IConfigurator {
+class GameConfigurator: IConfigurator {
 	public void Configure(IContainerDefinition c) {
 		Debug.Log(this.GetType().Name);
+		c.Bind<Cam>().AsSingleton();
 		c.Bind<Nav>().AsSingleton();
 		c.Bind<Sky>().AsSingleton();
 	}
@@ -35,30 +37,73 @@ enum NavMode {
 	Orbit,
 }
 
-class Sky(
+class Cam(
 	CameraService cameraService,
-	MapSize mapSize
+	ISpecService specService
+): ILoadableSingleton {
+	CameraServiceSpec cameraServiceSpec = null!;
+	public void Load() {
+		Debug.Log("Cam.Load");
+		cameraServiceSpec = specService.GetSingleSpec<CameraServiceSpec>();
+		cameraService._camera.farClipPlane = 2 * 1000f;
+		cameraService.FreeMode = true;
+		RenderSettings.fog = false;
+	}
+	public Camera camera => cameraService._camera;
+	public float distance {
+		get => (
+			Mathf.Pow(cameraServiceSpec!.ZoomBase, cameraService.ZoomLevel) *
+			cameraServiceSpec!.BaseDistance
+		);
+	}
+	public Quaternion rotation {
+		get => Quaternion.Euler(
+			cameraService.VerticalAngle,
+			cameraService.HorizontalAngle,
+			0
+		);
+		set {
+			cameraService.VerticalAngle = Vector3.Angle(value * Vector3.forward, Vector3.up) - 90;
+			cameraService.HorizontalAngle = value.eulerAngles.y;
+		}
+	}
+	public Vector3 position {
+		get => cameraService.Target + rotation * Vector3.down * distance;
+		set {
+			cameraService.Target = value - rotation * Vector3.down * distance;
+		}
+	}
+}
+
+class Sky(
+	Cam cam,
+	CameraService cameraService
 ): ILoadableSingleton {
 	GameObject sun = null!;
 	public void Load() {
 		Debug.Log("Sky.Load");
 		sun = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-		sun.transform.localScale = new Vector3(10 * 1000, 10 * 1000, 10 * 1000);
-		var center = new Vector3(
-			mapSize.TerrainSize.x * 0.5f,
-			0,
-			mapSize.TerrainSize.y * 0.5f
-		);
-		var sunOffset = Quaternion.Euler(new Vector3(0, 0, 0)) * Vector3.forward * (90 * 1000f);
-
-		sun.transform.position = center + sunOffset;
+		sun.transform.localScale = new Vector3(50, 50, 50);
 		sun.layer = Layers.IgnoreRaycastMask;
+		var material = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+		material.color = Color.white;
+		sun.GetComponent<Renderer>().material = material;
+		cameraService.CameraPositionOrRotationChanged += delegate {
+			var center = new Vector3(
+				cam.position.x,
+				0,
+				cam.position.z
+			);
+			var sunOffset = Quaternion.Euler(new Vector3(0, 0, 0)) * Vector3.forward * 1000f;
+
+			sun.transform.position = center + sunOffset;
+		};
 		//ground.color
-		cameraService._camera.farClipPlane = (100 * 1000f);
 	}
 }
 
 class Nav(
+	Cam cam,
 	InputService inputService,
 	SelectableObjectRaycaster selectableObjectRaycaster,
 	CameraService cameraService,
@@ -77,8 +122,6 @@ class Nav(
 		//crosshair.layer = Layers.IgnoreRaycastMask;
 		inputService.AddInputProcessor(this);
 		cameraServiceSpec = specService.GetSingleSpec<CameraServiceSpec>();
-		RenderSettings.fog = false;
-		cameraService.FreeMode = true;
 	}
 	
 	void TerrainHit(Ray worldRay, out Vector3? worldHit, out float worldDistance) {
@@ -134,8 +177,8 @@ class Nav(
 	NavMode? navMode;
 	Vector3? orbitOriginWorldPoint;
 	Vector2? orbitOriginalScreenPoint;
-	Vector3? orbitOriginalCameraTarget;
-	Vector2? orbitOriginalCameraAngle;
+	Vector3? orbitOriginalCameraPosition;
+	Quaternion? orbitOriginalCameraRotation;
 	Plane? panWorldPlane;
 	Vector3? panOriginalCameraTarget;
 	Vector2? panOriginalScreenPoint;
@@ -152,14 +195,6 @@ class Nav(
 		//Debug.Log("worldPoint " + worldPoint);
 
 		var zoomFactor = 1 - inputService.MouseZoom * 1f;
-		var cameraDistance = (
-			Mathf.Pow(cameraServiceSpec!.ZoomBase, cameraService.ZoomLevel) *
-			cameraServiceSpec!.BaseDistance
-		);
-		var cameraVector = (
-			Quaternion.Euler(cameraService.VerticalAngle, cameraService.HorizontalAngle, 0) *
-			new Vector3(0, 0, 0 - cameraDistance)
-		);
 
 		if (
 			inputService.RotateButtonHeld ||
@@ -175,26 +210,30 @@ class Nav(
 				navMode = NavMode.Orbit;
 				orbitOriginWorldPoint = worldPoint;
 				orbitOriginalScreenPoint = screenPoint;
-				orbitOriginalCameraTarget = cameraService.Target;
-				orbitOriginalCameraAngle = new Vector2(cameraService.HorizontalAngle, cameraService.VerticalAngle);
+				orbitOriginalCameraPosition = cam.position;
+				orbitOriginalCameraRotation = cam.rotation;
 			} else {
 				// continue orbit
 				var screenDistance = screenPoint - orbitOriginalScreenPoint!.Value;
-				var freeAngleDelta = new Vector2(screenDistance.x * 0.1f, 0 - screenDistance.y * 0.1f);
-				var freeCameraAngle = orbitOriginalCameraAngle!.Value + freeAngleDelta;
-				var clampedCameraAngle = new Vector2(
-					freeCameraAngle.x,
+				var freeAngleDelta = Quaternion.Euler(
+					0 - screenDistance.y * 0.1f,
+					screenDistance.x * 0.1f,
+					0
+				);
+				var freeCameraAngle = orbitOriginalCameraRotation!.Value * freeAngleDelta;
+				/*var clampedCameraAngle = Quaternion.Euler(
 					Mathf.Clamp(
-						freeCameraAngle.y,
+						freeCameraAngle.eulerAngles.x,
 						cameraServiceSpec!.VerticalAngleLimits.Min * 0.25f, cameraServiceSpec.VerticalAngleLimits.Max
-					)
+					),
+					freeCameraAngle.eulerAngles.y,
+					freeCameraAngle.eulerAngles.z
 				);
-				var clampedAngleDelta = clampedCameraAngle - orbitOriginalCameraAngle!.Value;
+				var clampedAngleDelta = clampedCameraAngle * Quaternion.Inverse(orbitOriginalCameraAngle!.Value);*/
 
-				cameraService.HorizontalAngle = clampedCameraAngle.x;
-				cameraService.VerticalAngle = clampedCameraAngle.y;
+				cam.rotation = /*clampedCameraAngle*/freeCameraAngle;
 
-				var orbitPoint = (
+				/*cameraService.Target = (
 					(
 						Quaternion.AngleAxis(clampedAngleDelta.x, Vector3.up) *
 						Quaternion.AngleAxis(clampedAngleDelta.y, (
@@ -204,25 +243,14 @@ class Nav(
 					) *
 					(orbitOriginalCameraTarget!.Value - orbitOriginWorldPoint!.Value) +
 					orbitOriginWorldPoint!.Value
-				);
+				);*/
 
-				var targetPlane = new Plane(Vector3.up, 0);
-				var targetRay = new Ray(orbitPoint, cameraVector * (0 - 1));
-				targetPlane.Raycast(targetRay, out var targetPlaneOffset);
-				var targetPoint = targetRay.GetPoint(targetPlaneOffset);
-				cameraService.Target = targetPoint;
-
-				cameraService.Target = (
+				/*cam.position = (
 					(
-						Quaternion.AngleAxis(clampedAngleDelta.x, Vector3.up) *
-						Quaternion.AngleAxis(clampedAngleDelta.y, (
-							Quaternion.AngleAxis(orbitOriginalCameraAngle!.Value.x, Vector3.up) *
-							Vector3.right
-						))
-					) *
-					(orbitOriginalCameraTarget!.Value - orbitOriginWorldPoint!.Value) +
+						freeAngleDelta
+					) * (orbitOriginalCameraPosition!.Value - orbitOriginWorldPoint!.Value) +
 					orbitOriginWorldPoint!.Value
-				);
+				)*/;
 			}
 		} else if (inputService.MoveButtonHeld) {
 			if (navMode != NavMode.Pan) {
@@ -255,20 +283,23 @@ class Nav(
 			);
 			var clampedZoomFactor = Mathf.Clamp(
 				zoomFactor,
-				minCameraDistance / cameraDistance,
-				maxCameraDistance / cameraDistance
+				minCameraDistance / cam.distance,
+				maxCameraDistance / cam.distance
 			);
-			Vector3? zoomPoint;
 
-			var cameraPosition = cameraService.Target + cameraVector;
 			//var zoomRay = new Ray(cameraPosition, worldPoint.Value - cameraPosition);
 			//var zoomPoint = zoomRay.GetPoint(inputService.MouseZoom * 20f);
-			zoomPoint = worldPoint + (cameraPosition - worldPoint) * clampedZoomFactor;
+			var zoomPoint = worldPoint + (cam.position - worldPoint) * clampedZoomFactor;
 			//Debug.Log("distance " + Vector3.Distance(cameraPosition, worldPoint.Value) + " by " + (1 - inputService.MouseZoom * 0.1f));
 
-			var targetPlane = new Plane(Vector3.up, 0);
-			var targetRay = new Ray(zoomPoint!.Value, cameraVector * (0 - 1));
-			targetPlane.Raycast(targetRay, out var targetPlaneOffset);
+			var targetPlaneY = new Plane(Vector3.up, 0);
+			var targetPlaneZ = new Plane(Vector3.forward, 0);
+			var targetPlaneX = new Plane(Vector3.right, 0);
+			var targetRay = new Ray(zoomPoint, cam.rotation * Vector3.up);
+			targetPlaneY.Raycast(targetRay, out var targetPlaneOffsetY);
+			targetPlaneZ.Raycast(targetRay, out var targetPlaneOffsetZ);
+			targetPlaneX.Raycast(targetRay, out var targetPlaneOffsetX);
+			var targetPlaneOffset = Mathf.Min(targetPlaneOffsetY, targetPlaneOffsetZ, targetPlaneOffsetX);
 			var targetPoint = targetRay.GetPoint(targetPlaneOffset);
 			cameraService.Target = targetPoint;
 
