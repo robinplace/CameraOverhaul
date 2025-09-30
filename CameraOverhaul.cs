@@ -1,6 +1,7 @@
 global using UnityEngine;
 global using HarmonyLib;
 using Timberborn.ModManagerScene;
+using Timberborn.CameraSystem;
 
 public class CameraOverhaul : IModStarter
 {

@@ -9,16 +9,14 @@ using Timberborn.SelectionSystem;
 using Timberborn.TerrainQueryingSystem;
 using Timberborn.GridTraversing;
 using Timberborn.CursorToolSystem;
-using Timberborn.TerrainSystem;
 using Timberborn.WaterSystem;
 using Timberborn.LevelVisibilitySystem;
 using UnityEngine.InputSystem;
-using Timberborn.MainMenuPanels;
 using Timberborn.BlueprintSystem;
 using Timberborn.OptionsGame;
 using Timberborn.ApplicationLifetime;
 using Timberborn.UILayoutSystem;
-using Timberborn.Rendering;
+using Timberborn.MainMenuScene;
 
 [Context("Game")]
 [Context("MapEditor")]
@@ -26,29 +24,6 @@ internal class GameConfigurator : IConfigurator {
 	public void Configure(IContainerDefinition c) {
 		Debug.Log(this.GetType().Name);
 		c.Bind<Nav>().AsSingleton();
-	}
-}
-
-[Context("MainMenu")]
-internal class MainMenuConfigurator : IConfigurator {
-	public void Configure(IContainerDefinition c) {
-		Debug.Log(this.GetType().Name);
-		c.Bind<AutoContinue>().AsSingleton();
-	}
-}
-
-public class AutoContinue(
-    MainMenuPanel mainMenuPanel
-) : IPostLoadableSingleton {
-	public void PostLoad() {
-		if (
-			!Keyboard.current.leftCommandKey.isPressed &&
-			!Keyboard.current.rightCommandKey.isPressed &&
-			!Keyboard.current.leftCtrlKey.isPressed &&
-			!Keyboard.current.rightCtrlKey.isPressed
-		) {
-			mainMenuPanel.ContinueClicked(null);
-		}
 	}
 }
 
@@ -225,7 +200,7 @@ class Nav(
 				cameraServiceSpec!.BaseDistance
 			)*/;
 			var maxCameraDistance = (
-				Mathf.Pow(cameraServiceSpec!.ZoomBase, cameraServiceSpec.MapEditorZoomLimits.Max) *
+				Mathf.Pow(cameraServiceSpec!.ZoomBase, cameraServiceSpec.MapEditorZoomLimits.Max * 1.3f) *
 				cameraServiceSpec!.BaseDistance
 			);
 			var clampedZoomFactor = Mathf.Clamp(
@@ -322,7 +297,7 @@ class Patches {
 
 	// turn off goodbye on quit to desktop
 	[HarmonyPrefix, HarmonyPatch(typeof(GameOptionsBox), nameof(GameOptionsBox.ExitToDesktopClicked))]
-	static bool ExitToDesktopClicked(GameOptionsBox __instance) {
+	static bool ExitToDesktopClicked() {
 		GameQuitter.Quit();
 		return false;
 	}
@@ -336,6 +311,33 @@ class Patches {
 	// turn off panel unpause
 	[HarmonyPrefix, HarmonyPatch(typeof(OverlayPanelSpeedLocker), nameof(OverlayPanelSpeedLocker.OnPanelHidden))]
 	static bool OnPanelHidden() {
+		return false;
+	}
+
+	// turn off welcome screen
+	[HarmonyPrefix, HarmonyPatch(typeof(MainMenuInitializer), nameof(MainMenuInitializer.ShowWelcomeScreen))]
+	static bool ShowWelcomeScreen(MainMenuInitializer __instance) {
+		__instance.ShowMainMenuPanel();
+		return false;
+	}
+
+	// increase max shadow distance
+	[HarmonyPrefix, HarmonyPatch(typeof(ShadowDistanceUpdater), nameof(ShadowDistanceUpdater.LateUpdateSingleton))]
+	static bool LateUpdateSingleton(ShadowDistanceUpdater __instance) {
+		float distance = Mathf.Clamp(
+			Mathf.Max(Mathf.Max(
+				__instance.DistanceAtNormalizedScreenPoint(new Vector2(0f, 0f)),
+				__instance.DistanceAtNormalizedScreenPoint(new Vector2(0f, 1f))
+			), Mathf.Max(
+				__instance.DistanceAtNormalizedScreenPoint(new Vector2(1f, 0f)),
+				__instance.DistanceAtNormalizedScreenPoint(new Vector2(1f, 1f))
+			)),
+			0f,
+			150 * 5
+		);
+		if (Mathf.Abs(distance - __instance.GetShadowDistance()) > 0.1f) {
+			__instance.SetShadowDistance(distance);
+		}
 		return false;
 	}
 
