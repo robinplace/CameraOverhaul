@@ -17,19 +17,45 @@ using Timberborn.OptionsGame;
 using Timberborn.ApplicationLifetime;
 using Timberborn.UILayoutSystem;
 using Timberborn.MainMenuScene;
+using Timberborn.Rendering;
+using Timberborn.MapStateSystem;
 
 [Context("Game")]
 [Context("MapEditor")]
-internal class GameConfigurator : IConfigurator {
+internal class GameConfigurator: IConfigurator {
 	public void Configure(IContainerDefinition c) {
 		Debug.Log(this.GetType().Name);
 		c.Bind<Nav>().AsSingleton();
+		c.Bind<Sky>().AsSingleton();
 	}
 }
 
 enum NavMode {
 	Pan,
 	Orbit,
+}
+
+class Sky(
+	CameraService cameraService,
+	MapSize mapSize
+): ILoadableSingleton {
+	GameObject sun = null!;
+	public void Load() {
+		Debug.Log("Sky.Load");
+		sun = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+		sun.transform.localScale = new Vector3(10 * 1000, 10 * 1000, 10 * 1000);
+		var center = new Vector3(
+			mapSize.TerrainSize.x * 0.5f,
+			0,
+			mapSize.TerrainSize.y * 0.5f
+		);
+		var sunOffset = Quaternion.Euler(new Vector3(0, 0, 0)) * Vector3.forward * (90 * 1000f);
+
+		sun.transform.position = center + sunOffset;
+		sun.layer = Layers.IgnoreRaycastMask;
+		//ground.color
+		cameraService._camera.farClipPlane = (100 * 1000f);
+	}
 }
 
 class Nav(
@@ -41,17 +67,18 @@ class Nav(
 	IThreadSafeWaterMap threadSafeWaterMap,
 	ILevelVisibilityService levelVisibilityService,
 	ISpecService specService
-) : ILoadableSingleton, IInputProcessor {
+): ILoadableSingleton, IInputProcessor {
 	//GameObject crosshair = null!;
 	CameraServiceSpec? cameraServiceSpec;
 
 	public void Load() {
 		Debug.Log("Nav.Load");
-		// crosshair = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-		// crosshair.layer = Layers.IgnoreRaycastMask;
+		//crosshair = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+		//crosshair.layer = Layers.IgnoreRaycastMask;
 		inputService.AddInputProcessor(this);
 		cameraServiceSpec = specService.GetSingleSpec<CameraServiceSpec>();
 		RenderSettings.fog = false;
+		cameraService.FreeMode = true;
 	}
 	
 	void TerrainHit(Ray worldRay, out Vector3? worldHit, out float worldDistance) {
@@ -121,7 +148,18 @@ class Nav(
 		zeroPlane.Raycast(worldRay, out var zeroOffset);
 		var zeroPoint = worldRay.GetPoint(zeroOffset);
 		var worldPoint = worldHit ?? zeroPoint;
-		// crosshair.transform.position = worldPoint;
+		//crosshair.transform.position = worldPoint;
+		//Debug.Log("worldPoint " + worldPoint);
+
+		var zoomFactor = 1 - inputService.MouseZoom * 1f;
+		var cameraDistance = (
+			Mathf.Pow(cameraServiceSpec!.ZoomBase, cameraService.ZoomLevel) *
+			cameraServiceSpec!.BaseDistance
+		);
+		var cameraVector = (
+			Quaternion.Euler(cameraService.VerticalAngle, cameraService.HorizontalAngle, 0) *
+			new Vector3(0, 0, 0 - cameraDistance)
+		);
 
 		if (
 			inputService.RotateButtonHeld ||
@@ -148,7 +186,7 @@ class Nav(
 					freeCameraAngle.x,
 					Mathf.Clamp(
 						freeCameraAngle.y,
-						cameraServiceSpec!.VerticalAngleLimits.Min, cameraServiceSpec.VerticalAngleLimits.Max
+						cameraServiceSpec!.VerticalAngleLimits.Min * 0.25f, cameraServiceSpec.VerticalAngleLimits.Max
 					)
 				);
 				var clampedAngleDelta = clampedCameraAngle - orbitOriginalCameraAngle!.Value;
@@ -156,7 +194,25 @@ class Nav(
 				cameraService.HorizontalAngle = clampedCameraAngle.x;
 				cameraService.VerticalAngle = clampedCameraAngle.y;
 
-				cameraService.MoveTargetTo(
+				var orbitPoint = (
+					(
+						Quaternion.AngleAxis(clampedAngleDelta.x, Vector3.up) *
+						Quaternion.AngleAxis(clampedAngleDelta.y, (
+							Quaternion.AngleAxis(orbitOriginalCameraAngle!.Value.x, Vector3.up) *
+							Vector3.right
+						))
+					) *
+					(orbitOriginalCameraTarget!.Value - orbitOriginWorldPoint!.Value) +
+					orbitOriginWorldPoint!.Value
+				);
+
+				var targetPlane = new Plane(Vector3.up, 0);
+				var targetRay = new Ray(orbitPoint, cameraVector * (0 - 1));
+				targetPlane.Raycast(targetRay, out var targetPlaneOffset);
+				var targetPoint = targetRay.GetPoint(targetPlaneOffset);
+				cameraService.Target = targetPoint;
+
+				cameraService.Target = (
 					(
 						Quaternion.AngleAxis(clampedAngleDelta.x, Vector3.up) *
 						Quaternion.AngleAxis(clampedAngleDelta.y, (
@@ -183,34 +239,24 @@ class Nav(
 				panWorldPlane!.Value.Raycast(originalWorldRay, out var originalOffset);
 				var originalPlanePoint = originalWorldRay.GetPoint(originalOffset);
 				var worldDistance = originalPlanePoint - planePoint;
-				cameraService.MoveTargetTo(panOriginalCameraTarget!.Value + worldDistance);
+				cameraService.Target = panOriginalCameraTarget!.Value + worldDistance;
 			}
 		} else {
 			navMode = null;
 		}
-
 		if (!inputService.MouseOverUI && inputService.MouseZoom != 0) {
-			var zoomFactor = 1 - inputService.MouseZoom * 1f;
-			var cameraDistance = (
-				Mathf.Pow(cameraServiceSpec!.ZoomBase, cameraService.ZoomLevel) *
-				cameraServiceSpec!.BaseDistance
-			);
 			var minCameraDistance = 0f/*(
 				Mathf.Pow(cameraServiceSpec!.ZoomBase, float.Epsilon) *
 				cameraServiceSpec!.BaseDistance
 			)*/;
 			var maxCameraDistance = (
-				Mathf.Pow(cameraServiceSpec!.ZoomBase, cameraServiceSpec.MapEditorZoomLimits.Max * 1.3f) *
+				Mathf.Pow(cameraServiceSpec!.ZoomBase, cameraServiceSpec.MapEditorZoomLimits.Max * 3f) *
 				cameraServiceSpec!.BaseDistance
 			);
 			var clampedZoomFactor = Mathf.Clamp(
 				zoomFactor,
 				minCameraDistance / cameraDistance,
 				maxCameraDistance / cameraDistance
-			);
-			var cameraVector = (
-				Quaternion.Euler(cameraService.VerticalAngle, cameraService.HorizontalAngle, 0) *
-				new Vector3(0, 0, 0 - cameraDistance)
 			);
 			Vector3? zoomPoint;
 
@@ -223,9 +269,8 @@ class Nav(
 			var targetPlane = new Plane(Vector3.up, 0);
 			var targetRay = new Ray(zoomPoint!.Value, cameraVector * (0 - 1));
 			targetPlane.Raycast(targetRay, out var targetPlaneOffset);
-
 			var targetPoint = targetRay.GetPoint(targetPlaneOffset);
-			cameraService.MoveTargetTo(targetPoint);
+			cameraService.Target = targetPoint;
 
 			var zoomLevel = Mathf.Log(
 				targetPlaneOffset / cameraServiceSpec!.BaseDistance,
@@ -318,6 +363,9 @@ class Patches {
 	[HarmonyPrefix, HarmonyPatch(typeof(MainMenuInitializer), nameof(MainMenuInitializer.ShowWelcomeScreen))]
 	static bool ShowWelcomeScreen(MainMenuInitializer __instance) {
 		__instance.ShowMainMenuPanel();
+		//if (!Application.isFocused) {
+		__instance._mainMenuPanel.LoadMostRecentSave();
+		//}
 		return false;
 	}
 
