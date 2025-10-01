@@ -24,7 +24,6 @@ using Timberborn.MapStateSystem;
 using Timberborn.ModManagerScene;
 using Timberborn.SkySystem;
 using Timberborn.TimeSystem;
-using System;
 
 public class CameraOverhaul : IModStarter
 {
@@ -33,6 +32,27 @@ public class CameraOverhaul : IModStarter
 		Debug.Log(this.GetType().Name);
 		var harmony = new Harmony("Robin.CameraOverhaul");
 		harmony.PatchAll();
+	}
+}
+
+class Utility {
+	public delegate void Transformer(Transform transform);
+	public static GameObject crosshair(
+		PrimitiveType? type = null,
+		Color? color = null,
+		Transformer? transformer = null
+	) {
+		var crosshair = GameObject.CreatePrimitive(type ?? PrimitiveType.Sphere);
+		crosshair.layer = Layers.IgnoreRaycastMask;
+		if (transformer != null) {
+			transformer(crosshair.transform);
+		}
+		var material = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+		material.color = color ?? Color.magenta;
+		crosshair.GetComponent<Renderer>().material = material;
+		var container = new GameObject();
+		crosshair.transform.parent = container.transform;
+		return container;
 	}
 }
 
@@ -57,10 +77,9 @@ class Cam(
 	ISpecService specService
 ): ILoadableSingleton {
 	CameraServiceSpec cameraServiceSpec = null!;
-	//GameObject crosshair = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+	GameObject crosshair = Utility.crosshair();
 	public void Load() {
 		Debug.Log("Cam.Load");
-		//crosshair.layer = Layers.IgnoreRaycastMask;
 		cameraServiceSpec = specService.GetSingleSpec<CameraServiceSpec>();
 		cameraService._camera.farClipPlane = 2 * 1000f;
 		cameraService.FreeMode = true;
@@ -98,7 +117,7 @@ class Cam(
 			}
 
 			var point = ray.GetPoint(highestOffset);
-			//crosshair.transform.position = point;
+			//crosshair.transform.localPosition = point;
 			cameraService.Target = point;
 			//Debug.Log("point " + point);
 
@@ -119,8 +138,24 @@ class Sky(
 	DayStageCycle dayStageCycle,
 	InputService inputService
 ): ILoadableSingleton, ILateUpdatableSingleton {
+	GameObject geographicNorthCrosshair = Utility.crosshair(
+		PrimitiveType.Cylinder,
+		Color.red,
+		transform => {
+			transform.localScale = new Vector3(0, 1000, 0);
+			transform.localPosition = new Vector3(0, 1000, 0);
+		}
+	);
+	GameObject planetaryNorthCrosshair = Utility.crosshair(
+		PrimitiveType.Cylinder,
+		Color.red,
+		transform => {
+			transform.localScale = new Vector3(0, 1000, 0);
+			transform.localPosition = new Vector3(0, 1000, 0);
+		}
+	);
 	GameObject sun = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-	GameObject moon = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+	//GameObject moon = GameObject.CreatePrimitive(PrimitiveType.Sphere);
 	public void Load() {
 		Debug.Log("Sky.Load");
 
@@ -131,12 +166,12 @@ class Sky(
 		sunMaterial.color = new Color(227 / 255f, 221 / 255f, 133 / 255f);
 		sun.GetComponent<Renderer>().material = sunMaterial;
 
-		moon.transform.localScale = new Vector3(30, 30, 30);
+		/*moon.transform.localScale = new Vector3(30, 30, 30);
 		moon.layer = Layers.IgnoreRaycastMask;
 		var moonMaterial = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
 		moonMaterial.color = new Color(202 / 255f, 197 / 255f, 182 / 255f);
 
-		moon.GetComponent<Renderer>().material = moonMaterial;
+		moon.GetComponent<Renderer>().material = moonMaterial;*/
 	}
 
 	public void LateUpdateSingleton() {
@@ -144,37 +179,51 @@ class Sky(
 	}
 
 	DayNightCycle dayNightCycle = (DayNightCycle) dayStageCycle._dayNightCycle;
-	int inclination = 30;
+	int tiltAngle = 30;
+	int latitudeAngle = 40;
+	// assume permanant summer solstice lol
 
 	void Render() {
 		var cameraCenter = new Vector3(cam.position.x, 0, cam.position.z);
 		var mapCenter = new Vector3(mapSize.TerrainSize.x * 0.5f, 0, mapSize.TerrainSize.z * 0.5f);
-		//var center = new Vector3(0, 0, 0);
 
 		var dayProgress = dayNightCycle.FluidSecondsPassedToday / dayNightCycle.ConfiguredDayLengthInSeconds;
+		dayProgress *= 100;
 
-		var sunAngle = 0 - (dayProgress - 1f / 12f) * 360f;
-		var moonAngle = 0 - (dayProgress - 7f / 12f) * 360f;
+		var spinAngle = 0 - (dayProgress - 1f / 12f) * 360f;
+		//var moonAngle = 0 - (dayProgress - 7f / 12f) * 360f;
 
-		var sunVector = Quaternion.Euler(0, 0, inclination) * Quaternion.Euler(sunAngle, 0, 0) * Vector3.forward;
-		var moonVector = Quaternion.Euler(0, 0, inclination) * Quaternion.Euler(moonAngle, 0, 0) * Vector3.forward;
+		var geographicNorth = Vector3.forward;
+		geographicNorthCrosshair.transform.localPosition = mapCenter;
+		geographicNorthCrosshair.transform.localRotation = Quaternion.LookRotation(geographicNorth);
 
-		sun.transform.position = cameraCenter + sunVector * 400f;
-		moon.transform.position = cameraCenter + moonVector * 400f;;
+		var planetaryNorth = Quaternion.Euler(latitudeAngle, 0, 0) * Quaternion.Euler(0, 0, spinAngle) * geographicNorth;
+		planetaryNorthCrosshair.transform.localPosition = mapCenter;
+		planetaryNorthCrosshair.transform.localRotation = Quaternion.LookRotation(planetaryNorth);
 
-		var lightIntensity = (
+		// forward is north
+		// 
+		var sunVector = Quaternion.Euler(0, 0, tiltAngle) * Quaternion.Euler(spinAngle, 0, 0) * Vector3.forward;
+		//var moonVector = Quaternion.Euler(0, 0, inclination) * Quaternion.Euler(moonAngle, 0, 0) * Vector3.forward;
+
+		sun.transform.localPosition = cameraCenter + sunVector * 400f;
+		//moon.transform.localPosition = cameraCenter + moonVector * 400f;
+
+		var transition = sunService._dayStageCycle.GetCurrentTransition();
+		sunService.UpdateColors(transition);
+		/*var lightIntensity = (
 			Math.Max(sunVector.y, 0) * 3.0f +
 			Math.Max(moonVector.y, 0) * 1.0f
 		);
-		sunService._sun.intensity = lightIntensity;
-		sunService._sun.transform.rotation = Quaternion.LookRotation(Vector3.zero - (
+		sunService._sun.intensity = lightIntensity;*/
+		sunService._sun.transform.localRotation = Quaternion.LookRotation(Vector3.zero - sunVector/*(
 			sunVector.y > 0 ?
 			sunVector * 1200f : (
 				moonVector.y > 0 ?
 				moonVector * 1200f :
 				Vector3.down * 1200f
 			)
-		));
+		)*/);
 
 		//var percentX = inputService.MousePosition.x / Display.main.renderingWidth;
 	}
@@ -191,12 +240,11 @@ class Nav(
 	ILevelVisibilityService levelVisibilityService,
 	ISpecService specService
 ): ILoadableSingleton, IInputProcessor {
-	//GameObject crosshair = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+	//GameObject crosshair = Utility.crosshair();
 	CameraServiceSpec? cameraServiceSpec;
 
 	public void Load() {
 		Debug.Log("Nav.Load");
-		//crosshair.layer = Layers.IgnoreRaycastMask;
 		inputService.AddInputProcessor(this);
 		cameraServiceSpec = specService.GetSingleSpec<CameraServiceSpec>();
 	}
@@ -268,8 +316,8 @@ class Nav(
 		zeroPlane.Raycast(worldRay, out var zeroOffset);
 		var zeroPoint = worldRay.GetPoint(zeroOffset);
 		var worldPoint = worldHit ?? zeroPoint;
-		//crosshair.transform.position = worldPoint + (cam.position - worldPoint) / 2;
-		//crosshair.transform.position = worldPoint;
+		//crosshair.transform.localPosition = worldPoint + (cam.position - worldPoint) / 2;
+		//crosshair.transform.localPosition = worldPoint;
 		//Debug.Log("worldPoint " + worldPoint);
 
 		if (
@@ -457,8 +505,8 @@ class Patch {
 	}
 
 	// turn off default sun motion
-	[HarmonyPrefix, HarmonyPatch(typeof(Sun), nameof(Sun.UpdateRotation))]
-	static bool UpdateRotation() {
+	[HarmonyPrefix, HarmonyPatch(typeof(Sun), nameof(Sun.UpdateColorsAndRotation))]
+	static bool UpdateColorsAndRotation() {
 		return false;
 	}
 
