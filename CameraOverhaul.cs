@@ -46,7 +46,7 @@ class Utility {
 		Transformer? transformer = null
 	) {
 		var crosshair = GameObject.CreatePrimitive(type ?? PrimitiveType.Sphere);
-		//crosshair.SetActive(false);
+		crosshair.SetActive(false);
 		crosshair.layer = Layers.IgnoreRaycastMask;
 		if (transformer != null) {
 			transformer(crosshair.transform);
@@ -176,6 +176,7 @@ class Sky(
 	);
 	GameObject sun = Icosphere.Create(3);
 	GameObject moon = Icosphere.Create(4);
+	GameObject moonClip = Icosphere.Create(4);
 	public void Load() {
 		Debug.Log("Sky.Load");
 
@@ -185,18 +186,18 @@ class Sky(
 		sunMaterial.color = new Color(230 / 255f, 220 / 255f, 140 / 255f);
 		sun.AddComponent<MeshRenderer>().material = sunMaterial;
 
-		var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("CameraOverhaul.moon.jpg");
-		var tex = new Texture2D(2, 2);
+		/*var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("CameraOverhaul.moon.jpg");
+		var tex = new Texture2D(1, 1);
 		var bytes = new byte[stream.Length];
 		stream.Read(bytes);
 		tex.LoadImage(bytes);
-		stream.Dispose();
+		stream.Dispose();*/
 
 		moon.transform.localScale = new Vector3(30, 30, 30);
 		moon.layer = Layers.IgnoreRaycastMask;
 		var moonMaterial = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
 		moonMaterial.color = new Color(230 / 255f, 220 / 255f, 200 / 255f);
-		moonMaterial.mainTexture = tex;
+		//moonMaterial.mainTexture = tex;
 		moon.AddComponent<MeshRenderer>().material = moonMaterial;
 	}
 
@@ -213,8 +214,11 @@ class Sky(
 		var cameraCenter = new Vector3(cam.position.x, 0, cam.position.z);
 		var mapCenter = new Vector3(mapSize.TerrainSize.x * 0.5f, 10, mapSize.TerrainSize.y * 0.5f);
 
-		var dayProgress = dayNightCycle.FluidSecondsPassedToday / dayNightCycle.ConfiguredDayLengthInSeconds;
-		dayProgress *= 50;
+		var dayProgress = (
+			dayNightCycle.DayNumber +
+			dayNightCycle.FluidSecondsPassedToday / dayNightCycle.ConfiguredDayLengthInSeconds
+		);
+		//dayProgress *= 50;
 
 		var spinAngle = (dayProgress + 3 / 24f) * 360f;
 		//var moonAngle = (dayProgress - 7 / 24f) * 360f;
@@ -236,15 +240,20 @@ class Sky(
 		solarRotationCrosshair.transform.localRotation = solarRotation * Quaternion.Euler(90, 0, 0);
 		var sunVector = solarRotation * Vector3.forward;
 
-		var lunarRotation = planetaryNorth * Quaternion.Euler(0, 0, spinAngle * 29 / 28) * Quaternion.Euler(90, 0, 0);
+		var lunarAngle = spinAngle * 29 / 28 + 90;
+		var lunarRotation = planetaryNorth * Quaternion.Euler(0, 0, lunarAngle) * Quaternion.Euler(90, 0, 0);
 		lunarRotationCrosshair.transform.localPosition = mapCenter;
 		lunarRotationCrosshair.transform.localRotation = lunarRotation * Quaternion.Euler(90, 0, 0);
 		var moonVector = lunarRotation * Vector3.forward;
 
+		//sun.transform.localRotation = solarRotation * Quaternion.Euler(0, 90, 0);
 		sun.transform.localPosition = cameraCenter + sunVector * 800f;
-		moon.transform.localPosition = mapCenter + moonVector * 600f * 0;
-		moon.transform.localRotation = lunarRotation * Quaternion.Euler(0, 90, 0);
-		moon.GetComponent<MeshFilter>().transform.localRotation = solarRotation * Quaternion.Euler(0, 90, 0);
+		moon.transform.localPosition = cameraCenter + moonVector * 600f;
+		moon.transform.localRotation = solarRotation * Quaternion.Euler(0, 0 - 90, 0);
+		/*moon.GetComponent<MeshRenderer>().material.mainTextureOffset = (
+			Quaternion.Inverse(solarRotation * Quaternion.Euler(0, 0 - 90, 0)) *
+			new Vector2(1, 1)
+		);*/
 
 		var transition = sunService._dayStageCycle.GetCurrentTransition();
 		sunService.UpdateColors(transition);

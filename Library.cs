@@ -60,21 +60,12 @@ class Icosphere {
 		}
 
 		verts = vList.ToArray();
-
-		var keptFaces = new System.Collections.Generic.List<int[]>();
-		foreach (var f in faces)
+		tris = new int[faces.Count * 3];
+		for (int i = 0; i < faces.Count; i++)
 		{
-			if (vList[f[0]].y < 0f || vList[f[1]].y < 0f || vList[f[2]].y < 0f)
-				continue;
-			keptFaces.Add(f);
-		}
-
-		tris = new int[keptFaces.Count * 3];
-		for (int i = 0; i < keptFaces.Count; i++)
-		{
-			tris[i * 3 + 0] = keptFaces[i][0];
-			tris[i * 3 + 1] = keptFaces[i][1];
-			tris[i * 3 + 2] = keptFaces[i][2];
+			tris[i * 3 + 0] = faces[i][0];
+			tris[i * 3 + 1] = faces[i][1];
+			tris[i * 3 + 2] = faces[i][2];
 		}
 
 		uvs = new Vector2[verts.Length];
@@ -98,3 +89,4 @@ class Icosphere {
 		return go;
 	}
 }
+
