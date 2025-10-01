@@ -5,12 +5,20 @@
 		<LangVersion>latest</LangVersion>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<Authors>Robin</Authors>
+
+		<Configuration>Debug</Configuration>
+		<DebugType>full</DebugType>
+		<DebugSymbols>true</DebugSymbols>
 	</PropertyGroup>
 
 	<PropertyGroup>
 		<DllPath>/Users/robin/Library/Application Support/Steam/steamapps/common/Timberborn/Timberborn.app/Contents/Resources/Data/Managed</DllPath>
 		<ModPath>/Users/robin/Documents/Timberborn/Mods</ModPath>
 	</PropertyGroup>
+
+	<ItemGroup>
+		<EmbeddedResource Include="moon.jpg" />
+	</ItemGroup>
 
 	<ItemGroup>
 		<PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.2" PrivateAssets="all" /> 
