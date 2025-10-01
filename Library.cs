@@ -1,5 +1,7 @@
 class Icosphere {
-	public static GameObject Create(int recursionLevel, float radius = 1f) {
+	public static GameObject Create(int recursionLevel, float radius = 1f, Quaternion? maybeTextureTilt = null) {
+		Quaternion textureTilt = maybeTextureTilt ?? Quaternion.identity;
+
 		Vector3[] verts;
 		int[] tris;
 		Vector2[] uvs;
@@ -60,20 +62,33 @@ class Icosphere {
 		}
 
 		verts = vList.ToArray();
-		tris = new int[faces.Count * 3];
-		for (int i = 0; i < faces.Count; i++)
+
+		var keptFaces = new System.Collections.Generic.List<int[]>();
+		foreach (var f in faces)
 		{
-			tris[i * 3 + 0] = faces[i][0];
-			tris[i * 3 + 1] = faces[i][1];
-			tris[i * 3 + 2] = faces[i][2];
+			if (vList[f[0]].x < 0.01f || vList[f[1]].x < 0.01f || vList[f[2]].x < 0.01f)
+				continue;
+			keptFaces.Add(f);
+		}
+
+		tris = new int[keptFaces.Count * 3];
+		for (int i = 0; i < keptFaces.Count; i++)
+		{
+			tris[i * 3 + 0] = keptFaces[i][0];
+			tris[i * 3 + 1] = keptFaces[i][1];
+			tris[i * 3 + 2] = keptFaces[i][2];
 		}
 
 		uvs = new Vector2[verts.Length];
 		for (int i = 0; i < verts.Length; i++)
 		{
 			Vector3 n = verts[i].normalized;
-			float u = 0.5f + (Mathf.Atan2(n.z, n.x) / (2f * Mathf.PI));
-			float v = 0.5f - (Mathf.Asin(n.y) / Mathf.PI);
+
+			// rotate the direction vector in 3D to tilt the texture mapping
+			Vector3 nTilted = textureTilt * n;
+
+			float u = 0.5f + (Mathf.Atan2(nTilted.z, nTilted.x) / (2f * Mathf.PI));
+			float v = (Mathf.Asin(nTilted.y) / Mathf.PI) - 0.5f;
 			uvs[i] = new Vector2(u, v);
 		}
 

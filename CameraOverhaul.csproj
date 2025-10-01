@@ -37,7 +37,6 @@
 		<Copy SourceFiles="manifest.json" DestinationFiles="mod/manifest.json"/>
 		<Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFiles="mod/$(AssemblyName).dll"/>
 
-		<Exec Command="killall Timberborn || true"/>
-		<Exec Command="/Applications/Steam.app/Contents/MacOS/steam_osx -applaunch 1062090 -skipModManager"/>
+		<Exec Command="zsh restart"/>
 	</Target>
 </Project>

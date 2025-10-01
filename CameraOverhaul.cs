@@ -24,9 +24,7 @@ using Timberborn.MapStateSystem;
 using Timberborn.ModManagerScene;
 using Timberborn.SkySystem;
 using Timberborn.TimeSystem;
-using System;
 using System.Reflection;
-using UnityEngine.UI;
 
 public class CameraOverhaul : IModStarter
 {
@@ -80,15 +78,31 @@ class Cam(
 	CameraService cameraService,
 	ISpecService specService,
 	MapSize mapSize
-): ILoadableSingleton {
+): ILoadableSingleton, ILateUpdatableSingleton {
 	CameraServiceSpec cameraServiceSpec = null!;
-	//GameObject crosshair = Utility.crosshair();
+	GameObject crosshair = Utility.crosshair(PrimitiveType.Sphere, Color.white);
+	GameObject ground = null!;
+
 	public void Load() {
 		Debug.Log("Cam.Load");
 		cameraServiceSpec = specService.GetSingleSpec<CameraServiceSpec>();
 		cameraService._camera.farClipPlane = 2 * 1000f;
 		RenderSettings.fog = false;
+		cameraService.FreeMode = true;
+
+		ground = GameObject.CreatePrimitive(PrimitiveType.Quad);
+		ground.layer = Layers.IgnoreRaycastMask;
+		var material = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+		material.color = Color.black;
+		ground.GetComponent<Renderer>().material = material;
+		ground.transform.localRotation = Quaternion.Euler(0 - 90, 0, 0);
 	}
+
+	public void LateUpdateSingleton() {
+		ground.transform.localPosition = new Vector3(mapSize.TerrainSize.x / 2, 0 - 1.15f, mapSize.TerrainSize.y / 2);
+		ground.transform.localScale = new Vector3(mapSize.TerrainSize.x, mapSize.TerrainSize.y, 1);
+	}
+
 	public Camera camera => cameraService._camera;
 	public float distance {
 		get => (
@@ -103,22 +117,47 @@ class Cam(
 			0
 		);
 		set {
-			cameraService.VerticalAngle = Vector3.Angle(value * Vector3.up, Vector3.up);
+			Debug.Log("value " + value * Vector3.forward);
+			Debug.Log("angle " + (Vector3.Angle(value * Vector3.forward, Vector3.up) - 90));
+			cameraService.VerticalAngle = Vector3.Angle(value * Vector3.forward, Vector3.up) - 90;
 			cameraService.HorizontalAngle = value.eulerAngles.y;
 		}
 	}
 	public Vector3 position {
 		get => cameraService.Target + rotation * Vector3.back * distance;
 		set {
+			var mapCenter = new Vector3(mapSize.TerrainSize.x * 0.5f, 0, mapSize.TerrainSize.y * 0.5f);
 			var ray = new Ray(value, rotation * Vector3.forward);
-			var plane = new Plane(Vector3.up, 0);
-			plane.Raycast(ray, out var offset);
-			var point = ray.GetPoint(offset);
-			cameraService.Target = point;
+
+			var planeArray = new Plane[] {
+				new Plane(Vector3.up, 0),
+				new Plane(Vector3.left, 0 - CameraService.FreeModeMapMargin),
+				new Plane(Vector3.left, mapSize.TerrainSize.x + CameraService.FreeModeMapMargin),
+				new Plane(Vector3.back, 0 - CameraService.FreeModeMapMargin),
+				new Plane(Vector3.back, mapSize.TerrainSize.y + CameraService.FreeModeMapMargin)
+			};
+
+			var minimumDistance = float.PositiveInfinity;
+			var mostCentralPoint = mapCenter;
+			var mostCentralPointOffset = 20f;
+			for (var i = 0; i < planeArray.Length; i++) {
+				if (planeArray[i].Raycast(ray, out var offset)) {
+					var point = ray.GetPoint(offset);
+					var distance = Vector3.Distance(mapCenter, point);
+					if (distance < minimumDistance) {
+						mostCentralPoint = point;
+						mostCentralPointOffset = offset;
+						minimumDistance = distance;
+					}
+				}
+			}
+
+			crosshair.transform.localPosition = mostCentralPoint;
+			cameraService.Target = mostCentralPoint;
 			//Debug.Log("point " + point);
 
 			var zoomLevel = Mathf.Log(
-				offset / cameraServiceSpec!.BaseDistance,
+				mostCentralPointOffset / cameraServiceSpec!.BaseDistance,
 				cameraServiceSpec!.ZoomBase
 			);
 			cameraService.ZoomLevel = zoomLevel;
@@ -131,14 +170,13 @@ class Sky(
 	Cam cam,
 	Sun sunService,
 	MapSize mapSize,
-	DayStageCycle dayStageCycle,
-	InputService inputService
+	DayStageCycle dayStageCycle
 ): ILoadableSingleton, ILateUpdatableSingleton {
 	GameObject upCrosshair = Utility.crosshair(
 		PrimitiveType.Cylinder,
 		Color.violet,
 		transform => {
-			transform.localScale = new Vector3(1, 100, 1);
+			transform.localScale = new Vector3(0.1f, 100, 0.1f);
 			transform.localPosition = new Vector3(0, 100, 0);
 		}
 	);
@@ -146,7 +184,7 @@ class Sky(
 		PrimitiveType.Cylinder,
 		Color.red,
 		transform => {
-			transform.localScale = new Vector3(1, 100, 1);
+			transform.localScale = new Vector3(0.1f, 100, 0.1f);
 			transform.localPosition = new Vector3(0, 100, 0);
 		}
 	);
@@ -154,7 +192,7 @@ class Sky(
 		PrimitiveType.Cylinder,
 		Color.orange,
 		transform => {
-			transform.localScale = new Vector3(1, 100, 1);
+			transform.localScale = new Vector3(0.1f, 100, 0.1f);
 			transform.localPosition = new Vector3(0, 100, 0);
 		}
 	);
@@ -162,7 +200,7 @@ class Sky(
 		PrimitiveType.Cylinder,
 		Color.yellow,
 		transform => {
-			transform.localScale = new Vector3(1, 100, 1);
+			transform.localScale = new Vector3(0.1f, 100, 0.1f);
 			transform.localPosition = new Vector3(0, 100, 0);
 		}
 	);
@@ -170,34 +208,33 @@ class Sky(
 		PrimitiveType.Cylinder,
 		Color.green,
 		transform => {
-			transform.localScale = new Vector3(1, 100, 1);
+			transform.localScale = new Vector3(0.1f, 100, 0.1f);
 			transform.localPosition = new Vector3(0, 100, 0);
 		}
 	);
-	GameObject sun = Icosphere.Create(3);
-	GameObject moon = Icosphere.Create(4);
-	GameObject moonClip = Icosphere.Create(4);
+	GameObject sun = null!;
+	GameObject moon = null!;
 	public void Load() {
 		Debug.Log("Sky.Load");
 
-		sun.transform.localScale = new Vector3(40, 40, 40);
+		sun = Icosphere.Create(3, 30);
 		sun.layer = Layers.IgnoreRaycastMask;
 		var sunMaterial = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
 		sunMaterial.color = new Color(230 / 255f, 220 / 255f, 140 / 255f);
 		sun.AddComponent<MeshRenderer>().material = sunMaterial;
 
-		/*var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("CameraOverhaul.moon.jpg");
+		var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("CameraOverhaul.moon.jpg");
 		var tex = new Texture2D(1, 1);
 		var bytes = new byte[stream.Length];
 		stream.Read(bytes);
 		tex.LoadImage(bytes);
-		stream.Dispose();*/
+		stream.Dispose();
 
-		moon.transform.localScale = new Vector3(30, 30, 30);
+		moon = Icosphere.Create(4, 22.5f, Quaternion.Euler(0, 0, tiltAngle));
 		moon.layer = Layers.IgnoreRaycastMask;
 		var moonMaterial = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
 		moonMaterial.color = new Color(230 / 255f, 220 / 255f, 200 / 255f);
-		//moonMaterial.mainTexture = tex;
+		moonMaterial.mainTexture = tex;
 		moon.AddComponent<MeshRenderer>().material = moonMaterial;
 	}
 
@@ -211,17 +248,16 @@ class Sky(
 	// assume permanant summer solstice lol
 
 	void Render() {
-		var cameraCenter = new Vector3(cam.position.x, 0, cam.position.z);
 		var mapCenter = new Vector3(mapSize.TerrainSize.x * 0.5f, 10, mapSize.TerrainSize.y * 0.5f);
+		var cameraCenter = /*mapCenter*/new Vector3(cam.position.x, 0, cam.position.z);
 
 		var dayProgress = (
 			dayNightCycle.DayNumber +
 			dayNightCycle.FluidSecondsPassedToday / dayNightCycle.ConfiguredDayLengthInSeconds
 		);
-		//dayProgress *= 50;
+		//dayProgress *= 30;
 
-		var spinAngle = (dayProgress + 3 / 24f) * 360f;
-		//var moonAngle = (dayProgress - 7 / 24f) * 360f;
+		var solarAngle = (dayProgress + 3.5f / 24f) * 360f;
 
 		var up = Quaternion.LookRotation(Vector3.up);
 		upCrosshair.transform.localPosition = mapCenter;
@@ -235,30 +271,44 @@ class Sky(
 		planetaryNorthCrosshair.transform.localPosition = mapCenter;
 		planetaryNorthCrosshair.transform.localRotation = planetaryNorth * Quaternion.Euler(90, 0, 0);
 
-		var solarRotation = planetaryNorth * Quaternion.Euler(0, 0, spinAngle) * Quaternion.Euler(90 - tiltAngle, 0, 0);
+		var solarRotation = planetaryNorth * Quaternion.Euler(0, 0, solarAngle) * Quaternion.Euler(90 - tiltAngle, 0, 0);
 		solarRotationCrosshair.transform.localPosition = mapCenter;
 		solarRotationCrosshair.transform.localRotation = solarRotation * Quaternion.Euler(90, 0, 0);
 		var sunVector = solarRotation * Vector3.forward;
 
-		var lunarAngle = spinAngle * 29 / 28 + 90;
+		var lunarAngle = solarAngle * 29 / 28 + 180;
+		//lunarAngle *= 3;
 		var lunarRotation = planetaryNorth * Quaternion.Euler(0, 0, lunarAngle) * Quaternion.Euler(90, 0, 0);
 		lunarRotationCrosshair.transform.localPosition = mapCenter;
 		lunarRotationCrosshair.transform.localRotation = lunarRotation * Quaternion.Euler(90, 0, 0);
 		var moonVector = lunarRotation * Vector3.forward;
 
-		//sun.transform.localRotation = solarRotation * Quaternion.Euler(0, 90, 0);
+		sun.transform.localRotation = solarRotation * Quaternion.Euler(0, 90, 0);
 		sun.transform.localPosition = cameraCenter + sunVector * 800f;
 		moon.transform.localPosition = cameraCenter + moonVector * 600f;
 		moon.transform.localRotation = solarRotation * Quaternion.Euler(0, 0 - 90, 0);
-		/*moon.GetComponent<MeshRenderer>().material.mainTextureOffset = (
-			Quaternion.Inverse(solarRotation * Quaternion.Euler(0, 0 - 90, 0)) *
-			new Vector2(1, 1)
-		);*/
+		moon.GetComponent<MeshRenderer>().material.mainTextureOffset = (
+			new Vector2((lunarAngle - solarAngle) / 360 + 0.5f, 0)
+		);
 
 		var transition = sunService._dayStageCycle.GetCurrentTransition();
 		sunService.UpdateColors(transition);
-		//sunService._sun.intensity *= Math.Max(sunVector.y, 0) * 1.5f;
-		sunService._sun.transform.localRotation = Quaternion.LookRotation(Vector3.zero - sunVector);
+
+		if (sunVector.y > 0) {
+			var sunRelevance = Mathf.Clamp(sunVector.y * 10, 0, 1);
+			sunService._sun.intensity *= sunRelevance;
+			sunService._sun.transform.localRotation = Quaternion.LookRotation(Vector3.zero - sunVector);
+		} else if (moonVector.y > 0) {
+			var moonRelevance = (
+				Vector3.Angle(sunVector, moonVector) / 180 *
+				Mathf.Clamp(0 - sunVector.y * 10, 0, 1)
+			);
+			sunService._sun.intensity = moonRelevance * 0.5f;
+			sunService._sun.transform.localRotation = Quaternion.LookRotation(Vector3.zero - moonVector);
+			sunService._sun.color = Color.white;
+		} else {
+			sunService._sun.intensity = 0;
+		}
 
 		/*sunService._sun.transform.localRotation = Quaternion.LookRotation(Vector3.zero - sunVector(
 			sunVector.y > 0 ?
@@ -291,7 +341,6 @@ class Nav(
 		Debug.Log("Nav.Load");
 		inputService.AddInputProcessor(this);
 		cameraServiceSpec = specService.GetSingleSpec<CameraServiceSpec>();
-		cameraService.FreeMode = true;
 	}
 	
 	void TerrainHit(Ray worldRay, out Vector3? worldHit, out float worldDistance) {
@@ -383,15 +432,15 @@ class Nav(
 			} else {
 				// continue orbit
 				var screenDistance = screenPoint - orbitOriginalScreenPoint!.Value;
-				var originalVertical = Vector3.Angle(orbitOriginalCameraRotation!.Value * Vector3.up, Vector3.up);
+				var originalVertical = Vector3.Angle(orbitOriginalCameraRotation!.Value * Vector3.forward, Vector3.up) - 90;
 				//Debug.Log("original " + originalVertical);
 				var freeAngleDelta = (
 					Quaternion.Euler(0, screenDistance.x * 0.1f, 0) *
 					orbitOriginalCameraRotation!.Value *
 					Quaternion.Euler(Mathf.Clamp(
 						0 - screenDistance.y * 0.1f,
-						cameraServiceSpec!.VerticalAngleLimits.Min * 0.125f - originalVertical,
-						90 - originalVertical
+						0 - 90 - originalVertical + float.Epsilon,
+						90 - originalVertical - float.Epsilon
 					), 0, 0) *
 					Quaternion.Inverse(orbitOriginalCameraRotation!.Value)
 				);
@@ -426,9 +475,9 @@ class Nav(
 		}
 		if (!inputService.MouseOverUI && inputService.MouseZoom != 0) {
 			var zoomFactor = 1 - inputService.MouseZoom * 1f;
-			var minCameraDistance = 0f;
+			var minCameraDistance = float.Epsilon;
 			var maxCameraDistance = (
-				Mathf.Pow(cameraServiceSpec!.ZoomBase, cameraServiceSpec.MapEditorZoomLimits.Max * 3f) *
+				Mathf.Pow(cameraServiceSpec!.ZoomBase, cameraServiceSpec.MapEditorZoomLimits.Max * 2f) *
 				cameraServiceSpec!.BaseDistance
 			);
 			var clampedZoomFactor = Mathf.Clamp(
