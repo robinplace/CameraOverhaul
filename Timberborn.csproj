@@ -30,40 +30,45 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<Resource Include="assets/*"/>
+		<Mod Include="zOverhaulCamera"/>
+		<Mod Include="zOverhaulMiscellaneous"/>
+		<Mod Include="zOverhaulSky"/>
 	</ItemGroup>
 
-	<ItemGroup>
-		<Reference Include="src/*.cs" Private="true"/>
-	</ItemGroup>
-
-	<ItemGroup>
-		<Mod Include="OverhaulCamera"/>
-		<Mod Include="OverhaulMiscellaneous"/>
-		<Mod Include="OverhaulSky"/>
-	</ItemGroup>
+	<Target Name="Log" BeforeTargets="Build">
+		<Message Text="
+@(Mod->Count()) mods: @(Mod->Distinct(), ', ')
+" Importance="high"/>
+	</Target>
 
 	<Target
-		Name="Mod"
-		AfterTargets="Build"
-		Inputs="src/%(Mod.Identity);@(Resource);@(Reference)"
-		Outputs="$(OutputPath)%(Mod.Identity).dll"
+		Name="Build"
+		Inputs="%(Mod.Identity)/*"
+		Outputs="build/%(Mod.Identity)/%(Mod.Identity).dll;build/%(Mod.Identity)/manifest.json"
 	>
-		<Message Text="Mod %(Mod.Identity)" Importance="high"/>
+		<ItemGroup>
+			<SourceInputs Include="%(Mod.Identity)/*.cs"/>
+			<AssetInputs Include="%(Mod.Identity)/*" Exclude="%(Mod.Identity)/*.cs"/>
+		</ItemGroup>
+		<Message Text="
+Mod: @(Mod.Identity)" Importance="high"/>
+		<Message Text="Source inputs: @(SourceInputs, ', ')" Importance="high"/>
+		<Message Text="Asset inputs: @(AssetInputs, ', ')" Importance="high"/>
 
 		<MakeDir Directories="build/%(Mod.Identity)"/>
 		<Csc
-			Sources="src/%(Mod.Identity).cs;lib/*.cs"
+			Sources="@(SourceInputs)"
 			OutputAssembly="build/%(Mod.Identity)/%(Mod.Identity).dll"
-			Resources="@(Resources)"
+			Resources="@(AssetInputs)"
 			References="@(ReferencePath)"
 			Nullable="$(Nullable)"
 			TargetType="Library"
 			DisabledWarnings="$(NoWarn)"
 			Optimize="true"
 		/>
-		<Copy SourceFiles="manifest.%(Mod.Identity).json" DestinationFiles="build/%(Mod.Identity)/manifest.json"/>
+		<Copy SourceFiles="%(Mod.Identity)/manifest.json" DestinationFiles="build/%(Mod.Identity)/manifest.json"/>
 	</Target>
+
 	<Target
 		Name="Restart"
 		AfterTargets="Mod"
