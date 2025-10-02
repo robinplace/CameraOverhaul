@@ -1,0 +1,10 @@
+{
+	"Name": "Overhaul Sky",
+	"Version": "0.2",
+	"Id": "Robin.OverhaulSky",
+	"MinimumGameVersion": "0.0.0.0",
+	"Description": "Rebuilds the sky with prettier shadows cast by an astronomically accurate sun & moon.",
+	"RequiredMods": [
+		{ "Id": "Harmony" }
+	]
+}

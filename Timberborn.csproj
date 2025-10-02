@@ -3,12 +3,12 @@
 		<TargetFramework>netstandard2.1</TargetFramework>
 		<Nullable>enable</Nullable>
 		<LangVersion>latest</LangVersion>
-		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<Authors>Robin</Authors>
 
 		<Configuration>Debug</Configuration>
 		<DebugType>full</DebugType>
 		<DebugSymbols>true</DebugSymbols>
+    <NoWarn>1701</NoWarn>
 	</PropertyGroup>
 
 	<PropertyGroup>
@@ -17,11 +17,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<EmbeddedResource Include="moon.jpg" />
-	</ItemGroup>
-
-	<ItemGroup>
-		<PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.2" PrivateAssets="all" /> 
+		<PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.2" PrivateAssets="all"/> 
 	</ItemGroup>
 
 	<ItemGroup>
@@ -33,10 +29,45 @@
 		<Reference Include="$(DllPath)/Newtonsoft.Json.dll" Publicize="true" Private="false"/>
 	</ItemGroup>
 
-	<Target Name="Copy" AfterTargets="Build">
-		<Copy SourceFiles="manifest.json" DestinationFiles="mod/manifest.json"/>
-		<Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFiles="mod/$(AssemblyName).dll"/>
+	<ItemGroup>
+		<Resource Include="assets/*"/>
+	</ItemGroup>
 
+	<ItemGroup>
+		<Reference Include="src/*.cs" Private="true"/>
+	</ItemGroup>
+
+	<ItemGroup>
+		<Mod Include="OverhaulCamera"/>
+		<Mod Include="OverhaulMiscellaneous"/>
+		<Mod Include="OverhaulSky"/>
+	</ItemGroup>
+
+	<Target
+		Name="Mod"
+		AfterTargets="Build"
+		Inputs="src/%(Mod.Identity);@(Resource);@(Reference)"
+		Outputs="$(OutputPath)%(Mod.Identity).dll"
+	>
+		<Message Text="Mod %(Mod.Identity)" Importance="high"/>
+
+		<MakeDir Directories="build/%(Mod.Identity)"/>
+		<Csc
+			Sources="src/%(Mod.Identity).cs;lib/*.cs"
+			OutputAssembly="build/%(Mod.Identity)/%(Mod.Identity).dll"
+			Resources="@(Resources)"
+			References="@(ReferencePath)"
+			Nullable="$(Nullable)"
+			TargetType="Library"
+			DisabledWarnings="$(NoWarn)"
+			Optimize="true"
+		/>
+		<Copy SourceFiles="manifest.%(Mod.Identity).json" DestinationFiles="build/%(Mod.Identity)/manifest.json"/>
+	</Target>
+	<Target
+		Name="Restart"
+		AfterTargets="Mod"
+	>
 		<Exec Command="zsh restart"/>
 	</Target>
 </Project>

@@ -1,3 +1,5 @@
+using UnityEngine;
+
 class Icosphere {
 	public static GameObject Create(int recursionLevel, float radius = 1f, Quaternion? maybeTextureTilt = null) {
 		Quaternion textureTilt = maybeTextureTilt ?? Quaternion.identity;
