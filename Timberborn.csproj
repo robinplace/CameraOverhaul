@@ -3,12 +3,13 @@
 		<TargetFramework>netstandard2.1</TargetFramework>
 		<Nullable>enable</Nullable>
 		<LangVersion>latest</LangVersion>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<Authors>Robin</Authors>
 
 		<Configuration>Debug</Configuration>
 		<DebugType>full</DebugType>
 		<DebugSymbols>true</DebugSymbols>
-    <NoWarn>1701</NoWarn>
+		<EnableDefaultCompileItems>false</EnableDefaultCompileItems>
 	</PropertyGroup>
 
 	<PropertyGroup>
@@ -30,28 +31,28 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<Mod Include="zOverhaulCamera"/>
-		<Mod Include="zOverhaulMiscellaneous"/>
-		<Mod Include="zOverhaulSky"/>
+		<Mod Include="OverhaulCamera"/>
+		<Mod Include="OverhaulMiscellaneous"/>
+		<Mod Include="OverhaulSky"/>
 	</ItemGroup>
 
-	<Target Name="Log" BeforeTargets="Build">
+	<Target Name="Log" AfterTargets="Build">
 		<Message Text="
-@(Mod->Count()) mods: @(Mod->Distinct(), ', ')
-" Importance="high"/>
+@(Mod->Count()) mods: @(Mod->Distinct(), ', ')" Importance="high"/>
 	</Target>
 
 	<Target
-		Name="Build"
-		Inputs="%(Mod.Identity)/*"
+		Name="Mod"
+		AfterTargets="Log"
+		Inputs="Common/*;%(Mod.Identity)/*"
 		Outputs="build/%(Mod.Identity)/%(Mod.Identity).dll;build/%(Mod.Identity)/manifest.json"
 	>
 		<ItemGroup>
-			<SourceInputs Include="%(Mod.Identity)/*.cs"/>
-			<AssetInputs Include="%(Mod.Identity)/*" Exclude="%(Mod.Identity)/*.cs"/>
+			<SourceInputs Include="Common/*.cs;%(Mod.Identity)/*.cs"/>
+			<AssetInputs Include="Common/*;%(Mod.Identity)/*" Exclude="Common/*.cs%(Mod.Identity)/*.cs"/>
 		</ItemGroup>
 		<Message Text="
-Mod: @(Mod.Identity)" Importance="high"/>
+Mod: %(Mod.Identity)" Importance="high"/>
 		<Message Text="Source inputs: @(SourceInputs, ', ')" Importance="high"/>
 		<Message Text="Asset inputs: @(AssetInputs, ', ')" Importance="high"/>
 
