@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project>
 	<PropertyGroup>
 		<TargetFramework>netstandard2.1</TargetFramework>
 		<Nullable>enable</Nullable>
@@ -73,8 +73,8 @@ Mod: %(Mod.Identity)" Importance="high"/>
 
 	<Target
 		Name="Restart"
-		AfterTargets="Mod"
+		AfterTargets="Build"
 	>
-		<Exec Command="zsh restart"/>
+		<Exec Command="zsh t restart"/>
 	</Target>
 </Project>

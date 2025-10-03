@@ -1,4 +1,0 @@
-#!zsh
-
-echo "Restarting"
-killall Timberborn && ./start || true

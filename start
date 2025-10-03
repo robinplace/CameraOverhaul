@@ -1,4 +1,0 @@
-#!zsh
-
-echo "Starting"
-/Applications/Steam.app/Contents/MacOS/steam_osx -applaunch 1062090 -skipModManager
