@@ -31,49 +31,18 @@
 		<Reference Include="$(DllPath)/Newtonsoft.Json.dll" Publicize="true" Private="false"/>
 	</ItemGroup>
 
-	<ItemGroup>
-		<Mod Include="OverhaulCamera"/>
-		<Mod Include="OverhaulMiscellaneous"/>
-		<Mod Include="OverhaulSky"/>
-	</ItemGroup>
-
-	<Target Name="Log" AfterTargets="Build">
-		<Message Text="
-@(Mod->Count()) mods: @(Mod->Distinct(), ', ')" Importance="high"/>
-	</Target>
-
 	<Target
-		Name="Mod"
-		AfterTargets="Log"
-		Inputs="Common/*;%(Mod.Identity)/*"
-		Outputs="build/%(Mod.Identity)/%(Mod.Identity).dll;build/%(Mod.Identity)/manifest.json"
+		Name="Copy"
+		AfterTargets="Build"
 	>
-		<ItemGroup>
-			<SourceInputs Include="Common/*.cs;%(Mod.Identity)/*.cs"/>
-			<AssetInputs Include="Common/*;%(Mod.Identity)/*" Exclude="Common/*.cs%(Mod.Identity)/*.cs"/>
-		</ItemGroup>
-		<Message Text="
-Mod: %(Mod.Identity)" Importance="high"/>
-		<Message Text="Source inputs: @(SourceInputs, ', ')" Importance="high"/>
-		<Message Text="Asset inputs: @(AssetInputs, ', ')" Importance="high"/>
-
-		<MakeDir Directories="build/%(Mod.Identity)"/>
-		<Csc
-			Sources="@(SourceInputs)"
-			OutputAssembly="build/%(Mod.Identity)/%(Mod.Identity).dll"
-			Resources="@(AssetInputs)"
-			References="@(ReferencePath)"
-			Nullable="$(Nullable)"
-			TargetType="Library"
-			DisabledWarnings="$(NoWarn)"
-			Optimize="true"
-		/>
-		<Copy SourceFiles="%(Mod.Identity)/manifest.json" DestinationFiles="build/%(Mod.Identity)/manifest.json"/>
+		<MakeDir Directories="../build/$(Mod)"/>
+		<Copy SourceFiles="manifest.json" DestinationFiles="../build/$(Mod)/manifest.json"/>
+		<Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFiles="../build/$(Mod)/$(Mod).dll"/>
 	</Target>
 
 	<Target
 		Name="Restart"
-		AfterTargets="Build"
+		AfterTargets="Copy"
 	>
 		<Exec Command="zsh t restart"/>
 	</Target>

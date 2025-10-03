@@ -11,9 +11,10 @@ options:
   -h, --help  print this help message
 
 commands:
-	build       build all packages
-	start       start timberborn
-	restart     restart timberborn, if it is running
+	build	   build all packages
+	watch	   watch build all packages
+	start	   start timberborn
+	restart	 restart timberborn, if it is running
 help
 }
 zparseopts -D -- h=help -help=help
@@ -21,6 +22,22 @@ if [[ -v help[1] ]]; then print_help; exit; fi
 
 case "$1" in
 	"build")
+		for dir in */manifest.json(N); do
+			mod="${dir:h}"
+			pushd "$mod"
+			dotnet build -p:Mod="$mod" || exit 1
+			popd
+		done
+	;;"watch")
+		free() { kill $(jobs -p); }
+		trap free exit
+		for dir in */manifest.json(N); do
+			mod="${dir:h}"
+			pushd "$mod"
+			dotnet watch build -p:Mod="$mod" || exit 1
+			popd
+		done
+		wait
 	;;"start")
 		echo "starting"
 		/Applications/Steam.app/Contents/MacOS/steam_osx -applaunch 1062090 -skipModManager
