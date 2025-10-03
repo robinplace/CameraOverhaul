@@ -10,10 +10,10 @@ using Timberborn.SkySystem;
 using Timberborn.TimeSystem;
 using System.Reflection;
 
-public class SkyOverhaul : IModStarter {
+public class OverhaulSky: IModStarter {
 	public void StartMod() {
 		Debug.Log(this.GetType().Name);
-		var harmony = new Harmony("Robin.SkyOverhaul");
+		var harmony = new Harmony("Robin.OverhaulSky");
 		harmony.PatchAll();
 	}
 }
@@ -85,7 +85,7 @@ class Sky(
 		sunMaterial.color = new Color(230 / 255f, 220 / 255f, 140 / 255f);
 		sun.AddComponent<MeshRenderer>().material = sunMaterial;
 
-		var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("CameraOverhaul.moon.jpg");
+		var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("OverhaulSky.moon.jpg");
 		var tex = new Texture2D(1, 1);
 		var bytes = new byte[stream.Length];
 		stream.Read(bytes);

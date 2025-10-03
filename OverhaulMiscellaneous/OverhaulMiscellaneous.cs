@@ -8,10 +8,10 @@ using Timberborn.UILayoutSystem;
 using Timberborn.MainMenuScene;
 using Timberborn.ModManagerScene;
 
-public class MiscellaneousOverhaul : IModStarter {
+public class OverhaulMiscellaneous: IModStarter {
 	public void StartMod() {
 		Debug.Log(this.GetType().Name);
-		var harmony = new Harmony("Robin.MiscellaneousOverhaul");
+		var harmony = new Harmony("Robin.OverhaulMiscellaneous");
 		harmony.PatchAll();
 	}
 }

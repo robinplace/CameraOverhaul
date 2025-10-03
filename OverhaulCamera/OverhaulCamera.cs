@@ -16,10 +16,10 @@ using UnityEngine.InputSystem;
 using Timberborn.BlueprintSystem;
 using Timberborn.ModManagerScene;
 
-public class CameraOverhaul: IModStarter {
+public class OverhaulCamera: IModStarter {
 	public void StartMod() {
 		Debug.Log(this.GetType().Name);
-		var harmony = new Harmony("Robin.CameraOverhaul");
+		var harmony = new Harmony("Robin.OverhaulCamera");
 		harmony.PatchAll();
 	}
 }

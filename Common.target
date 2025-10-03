@@ -9,7 +9,6 @@
 		<Configuration>Debug</Configuration>
 		<DebugType>full</DebugType>
 		<DebugSymbols>true</DebugSymbols>
-		<EnableDefaultCompileItems>false</EnableDefaultCompileItems>
 		<Deterministic>true</Deterministic>
 	</PropertyGroup>
 
@@ -44,6 +43,6 @@
 		Name="Restart"
 		AfterTargets="Copy"
 	>
-		<Exec Command="zsh t restart"/>
+		<Exec Command="zsh ../t restart"/>
 	</Target>
 </Project>
